@@ -490,7 +490,7 @@ $ ./bb.py build --key ~/keyring/secret
 ```
 
 If everything goes well, all images are prepared for final publishing to the feeds server. This process can be
-reproduced anytime in the feature.
+reproduced anytime in the future.
 
 ### Feeds Server
 
