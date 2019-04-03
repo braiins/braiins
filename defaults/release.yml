@@ -42,6 +42,7 @@ core:
     - uhttpd
     - uhttpd-mod-ubus
     - zlib
+    - bos_ip_report
 
 block_mount:
   list:

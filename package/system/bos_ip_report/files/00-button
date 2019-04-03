@@ -1,0 +1,11 @@
+#!/bin/sh
+
+BTN_0(){
+  /usr/bin/ip-report.sh
+}
+
+if [ "$ACTION" = "pressed" ]; then
+    if [ "$BUTTON" = "BTN_0" ]; then BTN_0
+    #elif [ "$BUTTON" = "BTN_1" ]; then BTN_1
+    fi
+fi
