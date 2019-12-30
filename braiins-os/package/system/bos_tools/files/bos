@@ -85,16 +85,16 @@ run_recovery() {
 	fi
 	# set 'recovery' variable in U-Boot environment
 	fw_setenv --script - <<-EOF
-		recovery=yes
-		recovery_net_ip=$net_ip
-		recovery_net_mask=$net_mask
-		recovery_net_gateway=$net_gateway
-		recovery_net_dns_servers=$net_dns_servers
-		recovery_net_hostname=$net_hostname
-		recovery_mtdparts=$recovery_mtdparts
+		recovery yes
+		recovery_net_ip $net_ip
+		recovery_net_mask $net_mask
+		recovery_net_gateway $net_gateway
+		recovery_net_dns_servers $net_dns_servers
+		recovery_net_hostname $net_hostname
+		recovery_mtdparts $recovery_mtdparts
 		# recovery from NAND is treated as a first boot; this prevents interference
 		# with inserted SD card where uEnv.txt can hinder the recovery process
-		first_boot=yes
+		first_boot yes
 	EOF
 	# U-Boot boot from different partition when variable 'recovery' is set
 	reboot
