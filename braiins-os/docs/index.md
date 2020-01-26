@@ -533,6 +533,15 @@ Alternatively, the IP Report can be enforced by calling ```bos ip_report``` from
 
 The message and the protocol are compatible with the Bitmain IP Reporter. The default message and protocol can be changed in a UCI configuration file `/etc/config/bos` under 'ip_report' group.
 
+### Discover using socat on linux
+
+Listen for UDP broadcasts on you linux host using socat to get IP Report
+
+```bash
+socat - udp-recv:14235,broadcast
+10.33.10.191,a0:b0:45:02:f5:35
+```
+
 ### Discover script
 
 The script *discover.py* (available in the repository, [clone it first](#cloning-the-braiins-os-repository)) is to be used to discover supported mining devices in the local network and has two working modes.
