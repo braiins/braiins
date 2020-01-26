@@ -23,7 +23,8 @@
       * [Firmware upgrade](#firmware-upgrade)
       * [Network miner discovery](#network-miner-discovery)
          * [IP Report/Set button](#ip-reportset-button)
-         * [Discover scipt](#discover-scipt)
+         * [Discover using socat](#discover-using-socat)
+         * [Discover script](#discover-script)
       * [Batch migration to Braiins OS](#batch-migration-to-braiins-os)
       * [Setting miner password via SSH](#setting-miner-password-via-ssh)
       * [Reset to initial Braiins OS version](#reset-to-initial-braiins-os-version)
@@ -533,7 +534,7 @@ Alternatively, the IP Report can be enforced by calling ```bos ip_report``` from
 
 The message and the protocol are compatible with the Bitmain IP Reporter. The default message and protocol can be changed in a UCI configuration file `/etc/config/bos` under 'ip_report' group.
 
-### Discover using socat on linux
+### Discover using socat
 
 Listen for UDP broadcasts on you linux host using socat to get IP Report
 
