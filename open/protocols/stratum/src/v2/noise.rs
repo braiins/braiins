@@ -33,7 +33,7 @@ use tokio_util::codec::{Framed, FramedParts};
 use ii_async_compat::prelude::*;
 use ii_wire;
 
-use crate::error::{Error, ErrorKind, Result, ResultExt};
+use crate::error::{Error, Result};
 use crate::v2;
 
 pub mod codec;
@@ -135,9 +135,7 @@ impl Initiator {
             remote_static_key,
             self.authority_public_key,
         );
-        certificate
-            .validate()
-            .context("Validation of certificate")?;
+        certificate.validate()?;
 
         Ok(())
     }
@@ -163,10 +161,9 @@ impl handshake::Step for Initiator {
             }
             1 => {
                 // <- e, ee, s, es
-                let in_msg = in_msg.ok_or(ErrorKind::Noise("No message arrived".to_string()))?;
+                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
                 let signature_len = self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
-                self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))
-                    .context("Certificate signature verification")?;
+                self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
                 handshake::StepResult::Done
             }
             _ => {
@@ -232,7 +229,7 @@ impl handshake::Step for Responder {
             0 => handshake::StepResult::ReceiveMessage,
             1 => {
                 // <- e
-                let in_msg = in_msg.ok_or(ErrorKind::Noise("No message arrived".to_string()))?;
+                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
                 self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
                 // Send the signature along this message
                 // TODO: use actual signature stored inside the responder instance

@@ -148,7 +148,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
     let payload: Box<dyn AnyPayload<Protocol>> = match MessageType::from_primitive(
         frame.header.msg_type,
     )
-    .ok_or(error::ErrorKind::UnknownMessage(
+    .ok_or(error::Error::UnknownMessage(
         format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
     ))? {
         MessageType::OpenTelemetryChannel => Box::new(OpenTelemetryChannel::try_from(frame)?),

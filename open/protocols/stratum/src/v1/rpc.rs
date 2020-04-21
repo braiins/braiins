@@ -35,7 +35,7 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 
 use super::{framing, Handler, Protocol};
-use crate::error::{Error, Result, ResultExt};
+use crate::error::{Error, Result};
 use crate::AnyPayload;
 
 /// All recognized methods of the V1 protocol have the 'mining.' prefix in json.
@@ -93,7 +93,7 @@ pub struct StratumResult(pub serde_json::Value);
 
 impl StratumResult {
     pub fn new_from<T: Serialize>(value: T) -> Result<Self> {
-        let value = serde_json::to_value(value).context("Failed to convert to result")?;
+        let value = serde_json::to_value(value)?;
         Ok(Self(value))
     }
 }
@@ -106,7 +106,7 @@ impl StratumResult {
 //    type Error = crate::error::Error;
 //
 //    fn try_from(value: T) -> std::result::Result<Self, Self::Error> {
-//        let value = serde_json::to_value(value).context("Failed to convert to result")?;
+//        let value = serde_json::to_value(value)?;
 //        StratumResult(value)
 //    }
 //}
@@ -232,7 +232,7 @@ impl FromStr for Rpc {
     /// Any error is being converted into JSON parsing error
     #[inline]
     fn from_str(s: &str) -> Result<Self> {
-        let x = serde_json::from_str(s).context("Parsing JSON failed")?;
+        let x = serde_json::from_str(s)?;
         Ok(x)
     }
 }

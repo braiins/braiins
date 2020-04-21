@@ -22,20 +22,20 @@
 
 //! Version 1 errors only
 
-use failure::Fail;
+use thiserror::Error;
 
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
-pub enum ErrorKind {
+#[derive(Error, Clone, Eq, PartialEq, Debug)]
+pub enum Error {
     /// Json error.
-    #[fail(display = "JSON error: {}", _0)]
+    #[error("JSON error: {0}")]
     Json(String),
 
-    #[fail(display = "Rpc error: {}", _0)]
+    #[error("Rpc error: {0}")]
     Rpc(String),
 
-    #[fail(display = "Subscription error: {}", _0)]
+    #[error("Subscription error: {0}")]
     Subscribe(String),
 
-    #[fail(display = "Submit error: {}", _0)]
+    #[error("Submit error: {0}")]
     Submit(String),
 }

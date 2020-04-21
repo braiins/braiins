@@ -7,7 +7,6 @@ edition = "2018"
 
 [dependencies]
 clap = "2.33.0"
-failure = "0.1.5"
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ctrlc = "3.1.0"
@@ -18,11 +17,8 @@ ii-wire = { path = "../protocols/wire" }
 ii-async-compat = { path = "../utils-rs/async-compat" }
 ii-logging = { path = "../utils-rs/logging" }
 structopt = "0.3"
+thiserror = "1.0"
+anyhow = "1.0"
 
 [features]
 v2json = ["ii-stratum/v2json"]
-
-# failure caused a problem when they used private API from quote:
-# https://users.rust-lang.org/t/failure-derive-compilation-error/39062
-[patch.crates-io.failure]
-path = "../utils-rs/failure"

@@ -454,7 +454,9 @@ dependencies = [
 
 [[package]]
 name = "failure"
-version = "0.1.6"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8529c2421efa3066a5cbd8063d2244603824daccb6936b079010bb2aa89464b"
 dependencies = [
  "backtrace",
  "failure_derive",
@@ -462,7 +464,9 @@ dependencies = [
 
 [[package]]
 name = "failure_derive"
-version = "0.1.6"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "030a733c8287d6213886dd487564ff5c8f6aae10278b3588ed177f9d18f8d231"
 dependencies = [
  "proc-macro2",
  "quote 1.0.2",
@@ -699,7 +703,6 @@ dependencies = [
  "bs58",
  "byteorder",
  "ed25519-dalek",
- "failure",
  "hex",
  "ii-async-compat",
  "ii-bitcoin",
@@ -721,17 +724,18 @@ dependencies = [
 name = "ii-stratum-proxy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bitcoin_hashes",
  "clap",
  "ctrlc",
- "failure",
  "ii-async-compat",
  "ii-logging",
  "ii-stratum",
  "ii-wire",
  "serde_json",
  "structopt",
+ "thiserror",
  "uint",
 ]
 

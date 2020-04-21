@@ -36,7 +36,7 @@ use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{Address, Client, Connection, Server};
 
-use crate::error::{ErrorKind, Result, ResultExt};
+use crate::error::{Error, Result};
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -128,7 +128,10 @@ impl ConnTranslation {
     {
         let status = match frame {
             Some(v2_translated_frame) => connection.send(v2_translated_frame).await,
-            None => Err(ErrorKind::Io("No more frames".to_string()))?,
+            None => Err(Error::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "No more frames".to_string(),
+            )))?,
         };
         status.map_err(|e| {
             info!("Send error: {} for (peer: {:?})", e, peer_addr);
@@ -312,8 +315,8 @@ where
         // failing. Also
         // Use the connection only to build the Framed object with V1 framing and to extract the
         // peer address
-        let v1_conn = v1_client.next().await.context("V1 upstream connection")?;
-        let v1_peer_addr = v1_conn.peer_addr().context("V1 upstream peer address")?;
+        let v1_conn = v1_client.next().await?;
+        let v1_peer_addr = v1_conn.peer_addr()?;
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         info!(
             "Established translation connection with upstream V1 {} for V2 peer: {}",

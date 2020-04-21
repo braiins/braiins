@@ -22,169 +22,71 @@
 
 //! Module that represents custom stratum proxy errors
 
-use failure::{Backtrace, Context, Fail};
 use std;
-use std::fmt::{self, Display};
 use std::io;
+use thiserror::Error;
 
 use ii_async_compat::prelude::*;
 
-#[derive(Debug)]
-pub struct Error {
-    inner: Context<ErrorKind>,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
-pub enum ErrorKind {
-    /// General error used for more specific .
-    #[fail(display = "General error: {}", _0)]
+#[derive(Error, Debug)]
+pub enum Error {
+    /// General error used for more specific errors.
+    #[error("General error: {0}")]
     General(String),
 
-    /// General error used for more specific .
-    #[fail(display = "Stratum error: {}", _0)]
-    Stratum(ii_stratum::error::ErrorKind),
+    /// Stratum protocol error.
+    #[error("Stratum error: {0}")]
+    Stratum(#[from] ii_stratum::error::Error),
 
     /// Bitcoin Hashes error.
-    #[fail(display = "Bitcoin Hashes error: {}", _0)]
-    BitcoinHashes(String),
+    #[error("Bitcoin Hashes error: {0}")]
+    BitcoinHashes(#[from] bitcoin_hashes::error::Error),
 
     /// Input/Output error.
-    #[fail(display = "I/O error: {}", _0)]
-    Io(String),
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
 
-    /// CLI usage / configuration error
-    #[fail(display = "Could not parse `{}` as IP address", _0)]
-    BadIp(String),
-}
+    /// Timeout error.
+    #[error("Timeout error: {0}")]
+    Timeout(#[from] tokio::time::Elapsed),
 
-/// Implement Fail trait instead of use Derive to get more control over custom type.
-/// The main advantage is customization of Context type which allows conversion of
-/// any error types to this custom error with general error kind by calling context
-/// method on any result type.
-impl Fail for Error {
-    fn cause(&self) -> Option<&dyn Fail> {
-        self.inner.cause()
-    }
+    /// Utf8 error
+    #[error("Error decoding UTF-8 string: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
 
-    fn backtrace(&self) -> Option<&Backtrace> {
-        self.inner.backtrace()
-    }
-}
+    /// Json Error
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Display::fmt(&self.inner, f)
-    }
-}
+    /// Connection Attempt Error
+    #[error("Client connection attempt error: {0}")]
+    ClientAttempt(#[from] ii_wire::AttemptError),
 
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        self.inner.get_context().clone()
-    }
-
-    pub fn into_inner(self) -> Context<ErrorKind> {
-        self.inner
-    }
-}
-
-/// Convenience conversion to Error from ErrorKind that carries the context
-impl From<ErrorKind> for Error {
-    fn from(kind: ErrorKind) -> Self {
-        Self {
-            inner: Context::new(kind),
-        }
-    }
-}
-
-impl From<ii_stratum::error::Error> for Error {
-    fn from(e: ii_stratum::error::Error) -> Self {
-        Self {
-            inner: e.into_inner().map(|kind| ErrorKind::Stratum(kind)),
-        }
-    }
+    /// File content error
+    #[error("Invalid content of key/certificate file: {0}")]
+    InvalidFile(String),
 }
 
 impl<T> From<futures::channel::mpsc::TrySendError<T>> for Error
 where
-    T: failure::Fail,
+    T: Send + Sync + 'static,
 {
     fn from(e: futures::channel::mpsc::TrySendError<T>) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Io(msg)),
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Io(msg)),
-        }
-    }
-}
-
-impl From<tokio::time::Elapsed> for Error {
-    fn from(e: tokio::time::Elapsed) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Io(msg)),
-        }
-    }
-}
-
-impl From<std::str::Utf8Error> for Error {
-    fn from(e: std::str::Utf8Error) -> Self {
-        Self {
-            inner: e.context(ErrorKind::General(e.to_string())),
-        }
+        Error::Io(io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
 impl From<&str> for Error {
     fn from(msg: &str) -> Self {
-        ErrorKind::General(msg.to_string()).into()
+        Error::General(msg.to_string())
     }
 }
 
 impl From<String> for Error {
     fn from(msg: String) -> Self {
-        ErrorKind::General(msg).into()
-    }
-}
-
-impl From<bitcoin_hashes::error::Error> for Error {
-    fn from(e: bitcoin_hashes::error::Error) -> Self {
-        Self {
-            inner: e.context(ErrorKind::BitcoinHashes(e.to_string())),
-        }
-    }
-}
-impl From<Context<&str>> for Error {
-    fn from(context: Context<&str>) -> Self {
-        Self {
-            inner: context.map(|info| ErrorKind::General(info.to_string())),
-        }
-    }
-}
-
-impl From<Context<String>> for Error {
-    fn from(context: Context<String>) -> Self {
-        Self {
-            inner: context.map(|info| ErrorKind::General(info)),
-        }
-    }
-}
-
-impl From<Context<ErrorKind>> for Error {
-    fn from(context: Context<ErrorKind>) -> Self {
-        Self { inner: context }
+        Error::General(msg)
     }
 }
 
 /// A specialized `Result` type bound to [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// Re-export failure's ResultExt for easier usage
-pub use failure::ResultExt;

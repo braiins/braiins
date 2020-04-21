@@ -29,7 +29,7 @@ use ii_async_compat::tokio;
 use ii_stratum::v2;
 use ii_wire::Address;
 
-use crate::error::{Result, ResultExt};
+use crate::error::{Error, Result};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "stratum-proxy", about = "Stratum V2->V1 translating proxy.")]
@@ -101,30 +101,22 @@ impl Args {
     }
 }
 
-pub async fn read_from_file<T: TryFrom<String>>(
+pub async fn read_from_file<T>(
     file_path_buf: Option<&PathBuf>,
     error_context_descr: &str,
 ) -> Result<T>
 where
     T: TryFrom<String>,
-    <T as std::convert::TryFrom<std::string::String>>::Error: failure::Fail, //std::fmt::Display,
+    <T as TryFrom<String>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let file_path_buf =
-        file_path_buf.expect(format!("BUG: missing path {}", error_context_descr).as_str());
+    let file_path_buf = file_path_buf.expect(&format!("BUG: missing path {}", error_context_descr));
 
     let mut file = File::open(file_path_buf).await?;
     let mut file_content = String::new();
-    file.read_to_string(&mut file_content)
-        .await
-        .context(format!(
-            "Cannot read {} ({:?})",
-            error_context_descr, file_path_buf
-        ))?;
+    file.read_to_string(&mut file_content).await?;
 
-    let parsed_file_content = T::try_from(file_content).context(format!(
-        "Cannot parse {} ({:?})",
-        error_context_descr, file_path_buf,
-    ))?;
+    let parsed_file_content = T::try_from(file_content)
+        .map_err(|e| Error::InvalidFile(format!("Error: {} in file {:?}", e, file_path_buf)))?;
 
     Ok(parsed_file_content)
 }

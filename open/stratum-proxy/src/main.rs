@@ -23,17 +23,13 @@
 //! Simple proxy that translates V2 protocol from clients to V1 protocol and connects to a
 //! requested pool
 
+use anyhow::{Context, Result};
+use ctrlc;
 use std::cell::RefCell;
 use structopt::StructOpt;
 
-use ctrlc;
-
 use ii_async_compat::tokio;
-use ii_stratum_proxy::{
-    error::{Result, ResultExt},
-    frontend::Args,
-    server,
-};
+use ii_stratum_proxy::{frontend::Args, server};
 
 #[tokio::main]
 async fn main() -> Result<()> {

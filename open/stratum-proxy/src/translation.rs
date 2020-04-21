@@ -44,7 +44,7 @@ use ii_stratum::v2::{
 
 use ii_logging::macros::*;
 
-use crate::error::{Error, Result, ResultExt};
+use crate::error::{Error, Result};
 use crate::util;
 
 #[cfg(test)]
@@ -278,7 +278,7 @@ impl V2ToV1Translation {
             return Ok(());
         } else {
             Err(
-                ii_stratum::error::Error::from(v2::error::ErrorKind::ChannelNotOperational(
+                ii_stratum::error::Error::from(v2::error::Error::ChannelNotOperational(
                     "Channel details missing".to_string(),
                 ))
                 .into(),
@@ -357,9 +357,7 @@ impl V2ToV1Translation {
         // TODO review the use of serde_json here, it may be possible to eliminate this dependency
         // Extract version mask and verify it matches the maximum possible value
         let proposed_version_mask: v1::messages::VersionMask =
-            serde_json::from_value(payload.0["version-rolling.mask"].clone())
-                .context("Failed to parse version-rolling mask")
-                .map_err(|e| ii_stratum::error::Error::from(e))?;
+            serde_json::from_value(payload.0["version-rolling.mask"].clone())?;
 
         trace!(
             "Evaluating: version-rolling state == {:?} && mask=={:x?}",
@@ -503,12 +501,10 @@ impl V2ToV1Translation {
                         Ok(())
                     }
                 } else {
-                    Err(
-                        ii_stratum::error::Error::from(v1::error::ErrorKind::Subscribe(
-                            "Authorize result is false".to_string(),
-                        ))
-                        .into(),
-                    )
+                    Err(ii_stratum::error::Error::from(v1::error::Error::Subscribe(
+                        "Authorize result is false".to_string(),
+                    ))
+                    .into())
                 }
             })
             // any problem in parsing the response results in authorization failure
@@ -537,7 +533,7 @@ impl V2ToV1Translation {
             );
             self.abort_open_channel("Service not ready");
             Err(Error::from(ii_stratum::error::Error::from(
-                v1::error::ErrorKind::Subscribe(format!("{:?}", payload)),
+                v1::error::Error::Subscribe(format!("{:?}", payload)),
             )))
         } else {
             trace!("Ok, received the second of subscribe/authorize failures, channel is already closed: {:?}", payload);
@@ -670,7 +666,7 @@ impl V2ToV1Translation {
             trace!("Merkle root calculated: {:x?}", merkle_root);
             Ok(merkle_root)
         } else {
-            Err(super::error::ErrorKind::General(
+            Err(super::error::Error::General(
                 "Extra nonce 1 missing, cannot calculate merkle root".into(),
             )
             .into())
@@ -697,8 +693,7 @@ impl V2ToV1Translation {
     ) -> crate::error::Result<v2::messages::SetNewPrevHash> {
         // TODO review how this can be prevented from failing. If this fails, it should result in
         // panic as it marks a software bug
-        let prev_hash =
-            sha256d::Hash::from_slice(payload.prev_hash()).context("Build SetNewPrevHash")?;
+        let prev_hash = sha256d::Hash::from_slice(payload.prev_hash())?;
         let prev_hash = Uint256Bytes(prev_hash.into_inner());
 
         Ok(v2::messages::SetNewPrevHash {
@@ -820,14 +815,14 @@ impl V2ToV1Translation {
     ) {
         // Each response message should have an ID for pairing
         id.ok_or(Error::from(ii_stratum::error::Error::from(
-            v1::error::ErrorKind::Rpc("Missing ID in ii_stratum result".to_string()),
+            v1::error::Error::Rpc("Missing ID in ii_stratum result".to_string()),
         )))
         // find the ID in the request map
         .and_then(|id| {
             self.v1_req_map
                 .remove(&id)
                 .ok_or(Error::from(ii_stratum::error::Error::from(
-                    v1::error::ErrorKind::Rpc(format!("Received invalid ID {}", id).into()),
+                    v1::error::Error::Rpc(format!("Received invalid ID {}", id).into()),
                 )))
         })
         // run the result through the result handler
@@ -1181,7 +1176,7 @@ impl v2::Handler for V2ToV1Translation {
             .v2_to_v1_job_map
             .get(&payload.job_id)
             // convert missing job ID (None) into an error
-            .ok_or(crate::error::ErrorKind::General(format!(
+            .ok_or(crate::error::Error::General(format!(
                 "V2 Job ID not present {} in registry",
                 payload.job_id
             )))

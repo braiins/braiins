@@ -83,7 +83,6 @@ impl Frame {
 mod test {
     use super::super::{Handler, MessageId};
     use super::*;
-    use crate::error::ResultExt;
     use async_trait::async_trait;
 
     #[test]
@@ -98,7 +97,7 @@ mod test {
             }
 
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
-                writer.write(&EXPECTED_FRAME_BYTES).context("TestPayload")?;
+                writer.write(&EXPECTED_FRAME_BYTES)?;
                 Ok(())
             }
         }

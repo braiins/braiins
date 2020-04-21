@@ -28,7 +28,7 @@ use std::time;
 
 use ii_async_compat::prelude::*;
 
-use crate::error::{ErrorKind, Result, ResultExt};
+use crate::error::{Error, Result};
 
 /// Handshake message
 #[derive(Debug, Clone, PartialEq)]
@@ -98,11 +98,10 @@ where
         let handshake_frame: BytesMut = handshake_stream
             .next()
             .timeout(Self::HANDSHAKE_TIMEOUT)
-            .await
-            .context("Receive timeout")?
+            .await?
             // Convert optional frame into an error, unwrap it, and unwrap the
             // payload, too
-            .ok_or(ErrorKind::Io(
+            .ok_or(Error::Handshake(
                 "Noise handshake Connection shutdown".to_string(),
             ))??;
         Ok(Message::new(handshake_frame))
@@ -132,8 +131,7 @@ where
                     handshake_stream
                         .send(out_msg.inner)
                         .timeout(Self::HANDSHAKE_TIMEOUT)
-                        .await
-                        .context("Send timeout")??;
+                        .await??;
 
                     let handshake_message = self.receive_message(handshake_stream).await?;
                     (&mut in_msg).replace(handshake_message);
@@ -142,8 +140,7 @@ where
                     handshake_stream
                         .send(out_msg.inner)
                         .timeout(Self::HANDSHAKE_TIMEOUT)
-                        .await
-                        .context("Handshake send timeout")??;
+                        .await??;
                 }
                 // Initiator is now finalized
                 StepResult::Done => {

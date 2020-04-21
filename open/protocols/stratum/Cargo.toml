@@ -12,7 +12,6 @@ path = "src/keytool.rs"
 bench = false
 
 [dependencies]
-failure = "0.1.5"
 thiserror = "1.0"
 lazy_static = "1.4.0"
 serde = { version = "1.0.89", features = ["derive"] }
@@ -42,8 +41,3 @@ byte_string = "1.0.0"
 
 [features]
 v2json = []
-
-# failure caused a problem when they used private API from quote:
-# https://users.rust-lang.org/t/failure-derive-compilation-error/39062
-[patch.crates-io.failure]
-path = "../../utils-rs/failure"

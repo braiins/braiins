@@ -22,205 +22,106 @@
 
 //! Module that represents stratum protocol errors
 
-use failure::{Backtrace, Context, Fail};
-use std;
-use std::fmt::{self, Display};
-use std::io;
+use ii_async_compat::{tokio, tokio_util};
+use std::{self, fmt, io};
+use thiserror::Error;
 
-use ii_async_compat::tokio_util;
-
-#[derive(Debug)]
-pub struct Error {
-    inner: Context<ErrorKind>,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
-pub enum ErrorKind {
+#[derive(Error, Debug)] //TODO: We lost Clone PartialEq and Eq, is this important?
+pub enum Error {
     /// Input/Output error.
-    #[fail(display = "I/O error: {}", _0)]
-    Io(String),
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("Handshake error: {0}")]
+    Handshake(String),
+
+    /// Line Codec error.
+    #[error("Lines Codec error: {0}")]
+    LinesCodec(#[from] tokio_util::codec::LinesCodecError),
 
     /// Errors emitted by serde
-    #[fail(display = "Serde: {}", _0)]
-    Serde(String),
+    #[error("Serde JSON: {0}")]
+    Serde(#[from] serde_json::error::Error),
 
     /// General error used for more specific .
-    #[fail(display = "General error: {}", _0)]
+    #[error("General error: {0}")]
     General(String),
 
     /// Unexpected version of something.
-    #[fail(display = "Unexpected {} version: {}, expected: {}", _0, _1, _2)]
+    #[error("Unexpected {0} version: {1}, expected: {2}")]
     UnexpectedVersion(String, String, String),
 
-    #[fail(display = "Noise handshake error: {}", _0)]
+    #[error("Noise handshake error: {0}")]
     Noise(String),
 
+    #[error("Noise protocol error: {0}")]
+    NoiseProtocol(#[from] snow::error::Error),
+
+    #[error("Noise signature error: {0}")]
+    NoiseSignature(#[from] ed25519_dalek::SignatureError),
+
+    #[error("Noise base58 error: {0}")]
+    NoiseEncoding(#[from] bs58::decode::Error),
+
     /// Stratum version 1 error
-    #[fail(display = "V1 error: {}", _0)]
-    V1(super::v1::error::ErrorKind),
+    #[error("V1 error: {0}")]
+    V1(#[from] super::v1::error::Error),
+
     /// Stratum version 2 error
-    #[fail(display = "V2 error: {}", _0)]
-    V2(super::v2::error::ErrorKind),
+    #[error("V2 error: {0}")]
+    V2(#[from] super::v2::error::Error),
+
+    /// Stratum version 2 serialization error
+    #[error("V2 serialization error: {0}")]
+    V2Serialization(#[from] super::v2::serialization::Error),
+
+    /// Hex Decode error
+    #[error("Hex value decoding error: {0}")]
+    HexDecode(#[from] hex::FromHexError),
+
+    /// Invalid Bitcoin hash
+    #[error("Invalid Bitcoin hash: {0}")]
+    BitcoinHash(#[from] bitcoin_hashes::Error),
+
+    /// Timeout error
+    #[error("Timeout error: {0}")]
+    Timeout(#[from] tokio::time::Elapsed),
+
+    /// Format error
+    #[error("Format error: {0}")]
+    Format(#[from] fmt::Error),
+
+    /// Utf8 error
+    #[error("Error decoding UTF-8 string: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
 }
 
-/// Implement Fail trait instead of use Derive to get more control over custom type.
-/// The main advantage is customization of Context type which allows conversion of
-/// any error types to this custom error with general error kind by calling context
-/// method on any result type.
-impl Fail for Error {
-    fn cause(&self) -> Option<&dyn Fail> {
-        self.inner.cause()
-    }
-
-    fn backtrace(&self) -> Option<&Backtrace> {
-        self.inner.backtrace()
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Display::fmt(&self.inner, f)
-    }
-}
-
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        self.inner.get_context().clone()
-    }
-
-    pub fn into_inner(self) -> Context<ErrorKind> {
-        self.inner
-    }
-}
-
-/// Convenience conversion to Error from ErrorKind that carries the context
-impl From<ErrorKind> for Error {
-    fn from(kind: ErrorKind) -> Self {
-        Self {
-            inner: Context::new(kind),
-        }
+impl From<&str> for Error {
+    fn from(info: &str) -> Self {
+        Error::General(info.to_string())
     }
 }
 
-/// V1 Protocol version specific convenience conversion to Error
-impl From<super::v1::error::ErrorKind> for Error {
-    fn from(kind: super::v1::error::ErrorKind) -> Self {
-        ErrorKind::V1(kind).into()
-    }
-}
-
-/// V2 Protocol version specific convenience conversion to Error
-impl From<super::v2::error::ErrorKind> for Error {
-    fn from(kind: super::v2::error::ErrorKind) -> Self {
-        ErrorKind::V2(kind).into()
-    }
-}
-
-impl From<Context<ErrorKind>> for Error {
-    fn from(inner: Context<ErrorKind>) -> Self {
-        Self { inner }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Io(msg)),
-        }
-    }
-}
-
-impl From<fmt::Error> for Error {
-    fn from(e: fmt::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::General(msg)),
-        }
-    }
-}
-
-impl From<tokio_util::codec::LinesCodecError> for Error {
-    fn from(e: tokio_util::codec::LinesCodecError) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Io(msg)),
-        }
-    }
-}
-
-impl From<snow::error::Error> for Error {
-    fn from(e: snow::error::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Noise(msg)),
-        }
-    }
-}
-
-impl From<ed25519_dalek::SignatureError> for Error {
-    fn from(e: ed25519_dalek::SignatureError) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Noise(msg)),
-        }
-    }
-}
-
-impl From<bs58::decode::Error> for Error {
-    fn from(e: bs58::decode::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Noise(msg)),
-        }
-    }
-}
-
-impl From<std::str::Utf8Error> for Error {
-    fn from(e: std::str::Utf8Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::General(msg)),
-        }
-    }
-}
-
-impl From<Context<&str>> for Error {
-    fn from(context: Context<&str>) -> Self {
-        Self {
-            inner: context.map(|info| ErrorKind::General(info.to_string())),
-        }
-    }
-}
-
-impl From<Context<String>> for Error {
-    fn from(context: Context<String>) -> Self {
-        Self {
-            inner: context.map(|info| ErrorKind::General(info)),
-        }
-    }
-}
-
-impl From<serde_json::error::Error> for Error {
-    fn from(e: serde_json::error::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Serde(msg)),
-        }
-    }
-}
-
-impl From<super::v2::serialization::Error> for Error {
-    fn from(e: super::v2::serialization::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Serde(msg)),
-        }
+impl From<String> for Error {
+    fn from(info: String) -> Self {
+        Error::General(info)
     }
 }
 
 /// A specialized `Result` type bound to [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Re-export failure's ResultExt for easier usage
-pub use failure::ResultExt;
+#[cfg(test)]
+mod test {
+    use super::super::v2::error::Error as V2Error;
+    use super::*;
+
+    #[test]
+    fn test_error_display_with_inner_error() {
+        let inner_msg = "Usak is unknown";
+        let inner = V2Error::UnknownMessage(inner_msg.into());
+        let err = Error::V2(inner);
+        let msg = err.to_string();
+        assert!(msg.contains(inner_msg));
+    }
+}

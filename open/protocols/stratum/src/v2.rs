@@ -268,7 +268,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
     let payload: Box<dyn AnyPayload<Protocol>> = match MessageType::from_primitive(
         frame.header.msg_type,
     )
-    .ok_or(error::ErrorKind::UnknownMessage(
+    .ok_or(error::Error::UnknownMessage(
         format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
     ))? {
         MessageType::SetupConnection => Box::new(messages::SetupConnection::try_from(frame)?),
@@ -298,7 +298,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
         }
         MessageType::SubmitSharesError => Box::new(messages::SubmitSharesError::try_from(frame)?),
         _ => {
-            return Err(error::ErrorKind::UnknownMessage(
+            return Err(error::Error::UnknownMessage(
                 format!("Unexpected payload type, full header: {:?}", frame.header).into(),
             )
             .into())

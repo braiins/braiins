@@ -232,7 +232,6 @@ pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::error::ResultExt;
     use async_trait::async_trait;
 
     #[test]
@@ -340,9 +339,7 @@ mod test {
             }
 
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
-                writer
-                    .write(&EXPECTED_FRAME_BYTES[6..])
-                    .context("TestPayload")?;
+                writer.write(&EXPECTED_FRAME_BYTES[6..])?;
                 Ok(())
             }
         }

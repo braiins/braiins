@@ -25,7 +25,7 @@ use std::{convert::TryInto, fmt};
 
 use ii_async_compat::prelude::*;
 
-use crate::error::{Result, ResultExt};
+use crate::error::Result;
 
 /// Converts the response message into a `Frame` and submits it into the
 /// specified queue
@@ -38,7 +38,5 @@ where
     let frame = msg
         .try_into()
         .expect("BUG: Could convert the message to frame");
-    tx.try_send(frame)
-        .context("submit message")
-        .map_err(Into::into)
+    tx.try_send(frame).map_err(Into::into)
 }
