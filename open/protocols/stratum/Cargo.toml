@@ -33,7 +33,7 @@ ii-async-compat = { path = "../../utils-rs/async-compat" }
 ii-logging = { path = "../../utils-rs/logging" }
 structopt = "0.3"
 rand = "0.7.3"
-ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
+ed25519-dalek = { version = "=1.0.0-pre.3", features = ["serde"] }
 bs58 = { version ="0.3.0", features = ["check"] }
 anyhow = "1.0"
 
