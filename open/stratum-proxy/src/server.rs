@@ -56,7 +56,34 @@ pub struct ConnTranslation {
     /// Address of the v2 peer that has connected
     v2_peer_addr: SocketAddr,
     /// Frames from the translator to be sent out via V2 connection
-    v2_translation_rx: mpsc::Receiver<v2::Frame>,
+    v2_handler: V2Handler,
+}
+
+pub struct V2Handler {
+    translation_rx: mpsc::Receiver<v2::Frame>,
+    peer_addr: SocketAddr,
+}
+
+impl V2Handler {
+    /// Send all V2 frames via the specified V2 connection
+    /// TODO implement ConnTranslation::split()
+    async fn v2_send_task<S>(mut self, mut conn_sender: S) -> Result<()>
+    where
+        S: v2::FramedSink,
+    {
+        loop {
+            // We use select! so that more than just the translation receiver as a source can be
+            // added
+            select! {
+                // Send out frames translated into V2
+                v2_translated_frame = self.translation_rx.next() => {
+                    ConnTranslation::v2_try_send_frame(
+                        &mut conn_sender, v2_translated_frame, &self.peer_addr)
+                        .await?;
+                },
+            }
+        }
+    }
 }
 
 impl ConnTranslation {
@@ -84,7 +111,10 @@ impl ConnTranslation {
             v1_translation_rx,
             v2_conn,
             v2_peer_addr,
-            v2_translation_rx,
+            v2_handler: V2Handler {
+                translation_rx: v2_translation_rx,
+                peer_addr: v2_peer_addr,
+            },
         }
     }
 
@@ -136,30 +166,6 @@ impl ConnTranslation {
         })
     }
 
-    /// Send all V2 frames via the specified V2 connection
-    /// TODO consolidate this method into V2Handler, turn the parameters into fields and
-    /// implement ConnTranslation::split()
-    async fn v2_send_task<S>(
-        mut conn_sender: S,
-        mut translation_receiver: mpsc::Receiver<v2::Frame>,
-        peer_addr: SocketAddr,
-    ) -> Result<()>
-    where
-        S: v2::FramedSink,
-    {
-        loop {
-            // We use select! so that more than just the translation receiver as a source can be
-            // added
-            select! {
-                // Send out frames translated into V2
-                v2_translated_frame = translation_receiver.next().fuse() => {
-                    Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame, &peer_addr)
-                        .await?;
-                },
-            }
-        }
-    }
-
     async fn run(self) -> Result<()> {
         let mut v1_translation_rx = self.v1_translation_rx;
         let mut translation = self.translation;
@@ -170,7 +176,7 @@ impl ConnTranslation {
         let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.split();
 
         // TODO factor out the frame pumping functionality and append the JoinHandle of this task
-        //  to the select statement to detect any problems and to terminate the translation, too
+        // to the select statement to detect any problems and to terminate the translation, too
         // V1 message send out loop
         let v1_send_task = async move {
             while let Some(frame) = v1_translation_rx.next().await {
@@ -182,11 +188,7 @@ impl ConnTranslation {
         };
         tokio::spawn(v1_send_task);
 
-        tokio::spawn(Self::v2_send_task(
-            v2_conn_tx,
-            self.v2_translation_rx,
-            self.v2_peer_addr,
-        ));
+        tokio::spawn(self.v2_handler.v2_send_task(v2_conn_tx));
 
         // TODO: add cancel handler into the select statement
         loop {

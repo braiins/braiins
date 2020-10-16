@@ -212,9 +212,14 @@ async fn test_v2_client(server_addr: &Address) {
             .await
             .expect("BUG: Could not send message");
 
-            // TODO: enable this part of the test that attempts to read the response
-            // let response = await!(conn.next()).unwrap().unwrap();
-            // response.accept(&test_utils::v2::TestIdentityHandler);
+            match conn.next().await.expect("BUG: proxy do not respond") {
+                Ok(frame) => {
+                    v2::build_message_from_frame(frame)
+                        .expect("BUG: received invalid message")
+                        .header;
+                }
+                Err(_) => panic!("BUG: Could not receive message"),
+            }
 
             Result::<(), Error>::Ok(())
         }
