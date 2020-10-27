@@ -3,7 +3,7 @@ bcrypt==3.1.7
 cffi==1.13.2
 cloudpickle==1.2.2
 colorlog==2.10.0
-cryptography==2.8
+cryptography==3.2
 doit==0.31.1
 gitdb==4.0.2
 gitdb2==2.0.6
