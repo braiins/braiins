@@ -107,6 +107,10 @@ impl Handler for TestIdentityHandler {
     ) {
         self.visit_and_check(header, payload, build_submit_shares);
     }
+
+    async fn visit_reconnect(&mut self, header: &framing::Header, payload: &Reconnect) {
+        self.visit_and_check(header, payload, build_reconnect);
+    }
 }
 
 #[cfg(not(feature = "v2json"))]
@@ -211,5 +215,12 @@ pub fn build_submit_shares() -> SubmitSharesStandard {
         nonce: MINING_WORK_NONCE,
         ntime: MINING_WORK_NTIME,
         version: MINING_WORK_VERSION,
+    }
+}
+
+pub fn build_reconnect() -> Reconnect {
+    Reconnect {
+        new_host: Str0_255::from_str(POOL_URL),
+        new_port: POOL_PORT as u16,
     }
 }

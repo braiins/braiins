@@ -27,6 +27,7 @@ import argparse
 import logging
 import colorlog
 import builder as bos_builder
+import git
 import os
 
 import builder.dodo as bos_dodo
@@ -67,6 +68,16 @@ class CommandManager:
         # change default platform in configuration
         if args.platform:
             self._config.bos.platform = args.platform
+
+        # force default branch for related repository when release branch is active
+        # this behaviour cannot be overloaded in local configuration file
+        repo_meta = git.Repo(search_parent_directories=True)
+        if not repo_meta.head.is_detached:
+            repo_branch = repo_meta.active_branch.name
+            stable_branch_name = self._config.release.branch.stable
+            if repo_branch == stable_branch_name:
+                # set all related repositories to stable branch too
+                self._config.remote.branch = stable_branch_name
 
     def _doit_prepare(self, builder, task):
         bos_dodo.builder = builder
@@ -200,7 +211,7 @@ class CommandManager:
 
         config_original = bos_builder.load_config(self._args.config)
         builder = self.get_builder('checkout')
-        builder.release(config_original, push=not self._args.no_push)
+        builder.release(self._args.stage, config_original, push=not self._args.no_push, force=self._args.force)
 
     def key(self):
         logging.debug("Called command 'key'")
@@ -302,12 +313,16 @@ def main(argv):
 
     # create the parser for the "release" command
     subparser = subparsers.add_parser('release',
-                                      help="create branch with configuration for release version")
+                                      help="run specific stage of release process")
     subparser.set_defaults(func=command.release)
     subparser.add_argument('--no-fetch', action='store_true',
-                           help='do not force fetching all repositories before creating release configuration')
+                           help='do not force fetching all repositories before execution release stage')
     subparser.add_argument('--no-push', action='store_true',
                            help='do not push changes to upstream')
+    subparser.add_argument('--force', action='store_true',
+                           help='skip some checks and try to force')
+    subparser.add_argument('stage', choices=['begin', 'freeze', 'end'], default='begin',
+                           help='release process stage')
 
     # create the parser for the "key" command
     subparser = subparsers.add_parser('key',

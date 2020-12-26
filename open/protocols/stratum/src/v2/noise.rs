@@ -49,6 +49,9 @@ pub use snow::Keypair as StaticKeypair;
 pub type StaticPublicKey = Vec<u8>;
 /// Snow doesn't have a dedicated secret key type, we will need it for authentication
 pub type StaticSecretKey = Vec<u8>;
+/// Public key of the authority that the initiator uses to authenticate the remote server by
+/// verifying certificate signature
+pub use ed25519_dalek::PublicKey as AuthorityPublicKey;
 
 const PARAMS: &'static str = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
 // TODO: the following constants are public in snow but the constants module itself is private.
@@ -79,6 +82,7 @@ pub fn generate_keypair() -> Result<StaticKeypair> {
     builder.generate_keypair().map_err(Into::into)
 }
 
+#[derive(Debug)]
 pub struct Initiator {
     stage: usize,
     handshake_state: HandshakeState,

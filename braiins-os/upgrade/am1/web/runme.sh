@@ -41,7 +41,7 @@ MINER_HWID=$(dd if=/dev/urandom bs=1 count=12 2>/dev/null | base64 | tr +/ ab)
 cd firmware
 
 # run stage 1 upgrade process
-if ! /bin/sh stage1.sh "$MINER_HWID" yes cond no >/dev/null; then
+if ! /bin/sh stage1.sh "$MINER_HWID" "" default yes cond yes no >/dev/null; then
 	# clean up system to left it untouched
 	rm /usr/sbin/fw_setenv
 	rm /usr/sbin/fw_printenv

@@ -191,7 +191,12 @@ pub struct SetNewPrevHash {
 
 pub struct SetCustomMiningJob;
 pub struct SetCustomMiningJobSuccess;
-pub struct Reconnect;
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Reconnect {
+    pub new_host: Str0_255,
+    pub new_port: u16,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetTarget {
@@ -223,6 +228,7 @@ impl_base_message_conversion!(
     false,
     visit_open_standard_mining_channel_error
 );
+
 impl_base_message_conversion!(UpdateChannel, true, visit_update_channel);
 impl_base_message_conversion!(UpdateChannelError, true, visit_update_channel_error);
 impl_base_message_conversion!(SubmitSharesStandard, true, visit_submit_shares_standard);
@@ -230,4 +236,5 @@ impl_base_message_conversion!(SubmitSharesSuccess, true, visit_submit_shares_suc
 impl_base_message_conversion!(SubmitSharesError, true, visit_submit_shares_error);
 impl_base_message_conversion!(NewMiningJob, true, visit_new_mining_job);
 impl_base_message_conversion!(SetNewPrevHash, true, visit_set_new_prev_hash);
+impl_base_message_conversion!(Reconnect, false, visit_reconnect);
 impl_base_message_conversion!(SetTarget, true, visit_set_target);

@@ -114,7 +114,7 @@ pub const MINING_BROKEN_REQ_JSON: &str = concat!(
 /// TODO: find out how to fill in extra nonce 1 and extra nonce 2 size from predefined constants
 pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
     r#"{"id":1,"#,
-    r#""result":[[["mining.set_difficulty","4"],["mining.notify","1"]],"6c6f010000000c",4],"#,
+    r#""result":[[],"6c6f010000000c",4],"#,
     r#""error":null}"#
 );
 
@@ -149,10 +149,7 @@ pub fn build_mining_submit_ok_response_message() -> Rpc {
 
 pub fn build_subscribe_ok_result() -> SubscribeResult {
     SubscribeResult(
-        vec![
-            Subscription("mining.set_difficulty".to_string(), "4".to_string()),
-            Subscription("mining.notify".to_string(), "1".to_string()),
-        ],
+        vec![],
         ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1")),
         EXTRA_NONCE_2_SIZE,
     )
@@ -260,6 +257,24 @@ pub fn build_authorize() -> Authorize {
 }
 
 pub const MINING_AUTHORIZE_OK: &str = r#"{"id": 1,"error":null,"result":true}"#;
+
+pub const CLIENT_RECONNECT_JSON: &str =
+    r#"{"id":1,"method":"client.reconnect","params":["stratum.slushpool.com", 3333, 1]}"#;
+
+pub fn build_client_reconnect_request_message() -> Rpc {
+    build_request_message(Some(1), build_client_reconnect())
+}
+
+pub fn build_client_reconnect() -> ClientReconnect {
+    let deserialized =
+        Rpc::from_str(CLIENT_RECONNECT_JSON).expect("Cannot parse reconnect message");
+    let reconnect = if let Rpc::Request(req) = deserialized {
+        ClientReconnect::try_from(req).expect("Cannot build reconnect message")
+    } else {
+        panic!("Wrong reconnect message");
+    };
+    reconnect
+}
 
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.

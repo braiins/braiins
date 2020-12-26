@@ -19,11 +19,11 @@ upstream Stratum V1 node.
 
 This command builds the proxy, too:
 
-`cargo run --release -- --listen 0.0.0.0:3333 --remote stratum.slushpool.com:3333`
+`cargo run --release -- --listen 0.0.0.0:3333 --v1-upstream stratum.slushpool.com:3333 --certificate-file server-noise-static-public.cert`
 
 ## Running it directly
 
-`./target/release/ii-stratum-proxy --listen 0.0.0.0:3333 --remote stratum.slushpool.com:3333`
+`./target/release/ii-stratum-proxy --listen 0.0.0.0:3333 --v1-upstream stratum.slushpool.com:3333 --certificate-file server-noise-static-public.cert`
 
 
 
@@ -35,6 +35,4 @@ Below is a high level list of areas that still need to be resolved:
 - use V2 submission sequence numbers for batch acknowledgement of valid job
   solutions
 - improve logging
-- fix application shutdown - proxy refuses to shutdown if there any pending
-  connections and has to be killed
 - resolve all TODO's in the sources

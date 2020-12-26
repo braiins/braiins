@@ -125,3 +125,50 @@ impl From<Fans> for Dispatch {
         )
     }
 }
+
+/// Basic temperature control settings
+#[derive(Serialize, PartialEq, Clone, Debug)]
+pub struct TunerChainStatus {
+    #[serde(rename = "HashchainIndex")]
+    pub hashchain_index: u32,
+    #[serde(rename = "TuningElapsed")]
+    pub tuning_elapsed: Time,
+    #[serde(rename = "StageElapsed")]
+    pub stage_elapsed: Time,
+    #[serde(rename = "Status")]
+    pub status: String,
+    #[serde(rename = "Iteration")]
+    pub iteration: u32,
+    #[serde(rename = "PowerLimitWatt")]
+    pub power_limit: u32,
+    #[serde(rename = "ApproximatePowerConsumptionWatt")]
+    pub approx_consumption: u32,
+    #[serde(rename = "TunerRunning")]
+    pub tuner_running: bool,
+}
+
+/// Basic temperature control settings
+#[derive(Serialize, PartialEq, Clone, Debug)]
+pub struct TunerStatus {
+    #[serde(rename = "PowerLimit")]
+    pub power_limit: u32,
+    #[serde(rename = "ApproximateChainPowerConsumption")]
+    pub approx_chain_consumption: u32,
+    #[serde(rename = "ApproximateMinerPowerConsumption")]
+    pub approx_miner_consumption: u32,
+    #[serde(rename = "TunerChainStatus")]
+    pub chains: Vec<TunerChainStatus>,
+}
+
+impl From<TunerStatus> for Dispatch {
+    fn from(tuner_status: TunerStatus) -> Self {
+        Dispatch::from_success(
+            StatusCode::TunerStatus.into(),
+            "Tuner Status".to_string(),
+            Some(Body {
+                name: "TUNERSTATUS",
+                list: vec![tuner_status],
+            }),
+        )
+    }
+}

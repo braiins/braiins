@@ -35,11 +35,12 @@ use futures::channel::mpsc;
 
 use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use serde_json;
+use serde_json::Value;
 
 use ii_stratum::v1;
 use ii_stratum::v2::{
     self,
-    types::{Bytes0_32, Uint256Bytes},
+    types::{Bytes0_32, Str0_255, Uint256Bytes},
 };
 
 use ii_logging::macros::*;
@@ -67,15 +68,21 @@ impl SeqId {
     }
 }
 
+/// Compound struct for all translation options that can be tweaked in `V2ToV1Translation`
+#[derive(Copy, Clone, Debug)]
 pub struct V2ToV1TranslationOptions {
     /// Try to send `extranonce.subscribe` during handshake
     pub try_enable_xnsub: bool,
+    /// Reconnect received from the upstream is translated and propagated to the v2 downstream
+    /// connection. This can be useful for V2 clients that run this translation component locally
+    pub propagate_reconnect_downstream: bool,
 }
 
 impl Default for V2ToV1TranslationOptions {
     fn default() -> Self {
         Self {
             try_enable_xnsub: false,
+            propagate_reconnect_downstream: false,
         }
     }
 }
@@ -840,6 +847,51 @@ impl V2ToV1Translation {
         .ok();
     }
 
+    /// Parse the stratum V1 reconnect message into new host/port pair, where host is
+    /// converted into stratum v2 specific type. This method catches host name overflow attempts.
+    fn parse_client_reconnect(msg: &v1::messages::ClientReconnect) -> Result<(Str0_255, u16)> {
+        let new_host = match msg.host() {
+            Some(host_val) => match host_val {
+                Value::String(host_name) => Ok(host_name.clone()),
+                _ => Err("host name not a string"),
+            },
+            None => Ok("".to_owned()),
+        }
+        .and_then(|host_name| {
+            // TODO Str0_255 conversion returns () as an error, therefore we cannot mention the
+            // error here. Once this changes, the error mapping can be redone
+            Str0_255::try_from(host_name).map_err(|_e| "host name string too long")
+        })
+        .map_err(|e| {
+            crate::error::ErrorKind::General(format!(
+                "Cannot parse host ({}) in client.reconnect: {:?}",
+                e, msg
+            ))
+        })?;
+
+        let new_port = match msg.port() {
+            Some(port_val) => match port_val {
+                Value::Number(port) => match port.as_u64() {
+                    Some(n) => u16::try_from(n).map_err(|_e| "invalid u16"),
+                    None => Err("invalid u16"),
+                },
+                Value::String(port_str) => port_str
+                    .parse::<u16>()
+                    .map_err(|_e| "invalid number string"),
+                _ => Err("port number neither string nor int"),
+            },
+            None => Ok(0),
+        }
+        .map_err(|e| {
+            crate::error::ErrorKind::General(format!(
+                "Cannot parse port ({}) client.reconnect: {:?}",
+                e, msg
+            ))
+        })?;
+
+        Ok((new_host, new_port))
+    }
+
     fn log_session_details(&self, msg: &str) {
         let v2_channel_details = self
             .v2_channel_details
@@ -954,7 +1006,7 @@ impl v1::Handler for V2ToV1Translation {
         // We won't process the job as long as the channel is not operational
         if self.state != V2ToV1TranslationState::Operational {
             self.v1_deferred_notify = Some(payload.clone());
-            info!("Channel not yet operational, caching latest mining.notify from upstream");
+            debug!("Channel not yet operational, caching latest mining.notify from upstream");
             return;
         }
         self.perform_notify(payload)
@@ -983,6 +1035,33 @@ impl v1::Handler for V2ToV1Translation {
             self.state,
             payload,
         );
+    }
+
+    async fn visit_client_reconnect(
+        &mut self,
+        id: &v1::MessageId,
+        payload: &v1::messages::ClientReconnect,
+    ) {
+        trace!(
+            "visit_client_reconnect() id={:?} state={:?} payload:{:?}",
+            id,
+            self.state,
+            payload,
+        );
+        // Propagate the reconnect only if configured so
+        if self.options.propagate_reconnect_downstream {
+            Self::parse_client_reconnect(payload)
+                .map(|(new_host, new_port)| {
+                    let reconnect_msg = v2::messages::Reconnect { new_host, new_port };
+
+                    if let Err(submit_err) = util::submit_message(&mut self.v2_tx, reconnect_msg) {
+                        info!("Cannot send 'Reconnect': {:?}", submit_err);
+                    };
+                })
+                .map_err(|e| info!("visit_client_reconnect failed: {}", e))
+                // Consume the result, no way to return a status from the visitor
+                .ok();
+        }
     }
 }
 

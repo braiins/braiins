@@ -57,8 +57,8 @@ set_property -dict {PACKAGE_PIN E13  IOSTANDARD LVCMOS33  PULLUP true} [get_port
 ####################################################################################################
 # Pin assignment for I2C
 ####################################################################################################
-set_property -dict {PACKAGE_PIN K11  IOSTANDARD LVCMOS33  PULLUP true} [get_ports {iic_0_scl_io}];  # Jx.TSCL
-set_property -dict {PACKAGE_PIN K12  IOSTANDARD LVCMOS33  PULLUP true} [get_ports {iic_0_sda_io}];  # Jx.TSDA
+set_property -dict {PACKAGE_PIN K11  IOSTANDARD LVCMOS33  PULLUP true DRIVE 16} [get_ports {IIC_HB_scl_io}];  # Jx.TSCL
+set_property -dict {PACKAGE_PIN K12  IOSTANDARD LVCMOS33  PULLUP true DRIVE 16} [get_ports {IIC_HB_sda_io}];  # Jx.TSDA
 
 
 ####################################################################################################
@@ -80,8 +80,8 @@ set_property -dict {PACKAGE_PIN M14  IOSTANDARD LVCMOS33} [get_ports {io_txd_3}]
 ####################################################################################################
 # Pin assignment for PSU interface
 ####################################################################################################
-set_property -dict {PACKAGE_PIN F15  IOSTANDARD LVCMOS33  PULLUP true} [get_ports {iic_psu_scl_io}];  # SCL
-set_property -dict {PACKAGE_PIN H14  IOSTANDARD LVCMOS33  PULLUP true} [get_ports {iic_psu_sda_io}];  # SDA
+set_property -dict {PACKAGE_PIN F15  IOSTANDARD LVCMOS33  PULLUP true DRIVE 16} [get_ports {IIC_PSU_scl_io}];  # SCL
+set_property -dict {PACKAGE_PIN H14  IOSTANDARD LVCMOS33  PULLUP true DRIVE 16} [get_ports {IIC_PSU_sda_io}];  # SDA
 
 
 ####################################################################################################

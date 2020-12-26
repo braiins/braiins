@@ -21,6 +21,7 @@
 // contact us at opensource@braiins.com.
 
 // Sub-modules with client implementation
+pub mod connectors;
 pub mod telemetry;
 
 use ii_logging::macros::*;
@@ -28,7 +29,7 @@ use ii_logging::macros::*;
 use crate::error;
 use crate::hal;
 use crate::job;
-use crate::node;
+use crate::node::{self, Client};
 use crate::stats;
 use crate::sync;
 use crate::work;
@@ -55,16 +56,16 @@ use std::time;
 
 use ii_stratum::v2::messages::{
     NewMiningJob, OpenStandardMiningChannel, OpenStandardMiningChannelError,
-    OpenStandardMiningChannelSuccess, SetNewPrevHash, SetTarget, SetupConnection,
+    OpenStandardMiningChannelSuccess, Reconnect, SetNewPrevHash, SetTarget, SetupConnection,
     SetupConnectionError, SetupConnectionSuccess, SubmitSharesError, SubmitSharesStandard,
     SubmitSharesSuccess,
 };
 use ii_stratum::v2::types::*;
-use ii_stratum::v2::{
-    self,
-    framing::{Framing, Header},
-};
 use ii_stratum::v2::{build_message_from_frame, extensions, Handler};
+use ii_stratum::v2::{
+    framing::{Framing, Header},
+    DynFramedSink, DynFramedStream,
+};
 
 use std::collections::HashMap;
 
@@ -73,8 +74,8 @@ const VERSION_MASK: u32 = 0x1fffe000;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionDetails {
-    /// TODO temporary field that denotes the protocol, it will be replaced by a `Connector`
-    /// object that will have the information about a specific protocol already built-in
+    /// Protocol provides valuable diagnostic information as stratum_v2 operates in multiple
+    /// modes including V2->V1 translation
     pub protocol: ClientProtocol,
     pub user: String,
     pub host: String,
@@ -244,7 +245,8 @@ impl StratumEventHandler {
                 return;
             }
         }
-        warn!(
+        // FIXME: Change trace! to warn! after proper implementation of sequence number
+        trace!(
             "Stratum: last accepted solution #{} hasn't been found!",
             success_msg.last_seq_num
         );
@@ -345,6 +347,22 @@ impl Handler for StratumEventHandler {
         self.update_job(&future_job_msg).await;
     }
 
+    async fn visit_reconnect(&mut self, _header: &Header, reconnect_msg: &Reconnect) {
+        let new_host: String = reconnect_msg.new_host.clone().into();
+        info!(
+            "Reconnect to: {} {}, received on established connection: {}",
+            new_host,
+            reconnect_msg.new_port,
+            self.client.connection_details().get_host_and_port()
+        );
+        self.client
+            .reconnect(
+                reconnect_msg.new_host.clone().into(),
+                reconnect_msg.new_port,
+            )
+            .await;
+    }
+
     async fn visit_set_target(&mut self, _header: &Header, target_msg: &SetTarget) {
         self.update_target(target_msg.max_target);
     }
@@ -362,60 +380,14 @@ impl Handler for StratumEventHandler {
     }
 }
 
-trait FrameSink:
-    Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
-    + std::marker::Unpin
-    + std::fmt::Debug
-    + 'static
-{
-}
-
-impl<T> FrameSink for T where
-    T: Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
-        + std::marker::Unpin
-        + std::fmt::Debug
-        + 'static
-{
-}
-
-trait FrameStream:
-    Stream<
-        Item = std::result::Result<
-            <Framing as ii_wire::Framing>::Tx,
-            <Framing as ii_wire::Framing>::Error,
-        >,
-    > + std::marker::Unpin
-    + 'static
-{
-}
-
-impl<T> FrameStream for T where
-    T: Stream<
-            Item = std::result::Result<
-                <Framing as ii_wire::Framing>::Tx,
-                <Framing as ii_wire::Framing>::Error,
-            >,
-        > + std::marker::Unpin
-        + 'static
-{
-}
-
-struct StratumSolutionHandler<S> {
+struct StratumSolutionHandler {
     client: Arc<StratumClient>,
-    connection_tx: Arc<Mutex<S>>,
+    connection_tx: Arc<Mutex<DynFramedSink>>,
     seq_num: u32,
 }
 
-impl<S, E> StratumSolutionHandler<S>
-where
-    E: Into<error::Error>,
-    // TODO use S: FrameSink once the trait is adjusted to deal with payload specific error
-    S: Sink<<Framing as ii_wire::Framing>::Tx, Error = E>
-        + std::marker::Unpin
-        + std::fmt::Debug
-        + 'static,
-{
-    fn new(client: Arc<StratumClient>, connection_tx: Arc<Mutex<S>>) -> Self {
+impl StratumSolutionHandler {
+    fn new(client: Arc<StratumClient>, connection_tx: Arc<Mutex<DynFramedSink>>) -> Self {
         Self {
             client,
             connection_tx,
@@ -467,15 +439,11 @@ impl StratumConnectionHandler {
         }
     }
 
-    async fn setup_mining_connection<R, S>(
+    async fn setup_mining_connection(
         &mut self,
-        connection_rx: &mut R,
-        connection_tx: Arc<Mutex<S>>,
-    ) -> error::Result<()>
-    where
-        R: FrameStream,
-        S: FrameSink,
-    {
+        connection_rx: &mut DynFramedStream,
+        connection_tx: Arc<Mutex<DynFramedSink>>,
+    ) -> error::Result<()> {
         let connection_details = self.client.connection_details();
         let setup_msg = SetupConnection {
             protocol: 0,
@@ -502,15 +470,11 @@ impl StratumConnectionHandler {
         ))
     }
 
-    async fn open_channel<R, S>(
+    async fn open_channel(
         &mut self,
-        connection_rx: &mut R,
-        connection_tx: Arc<Mutex<S>>,
-    ) -> error::Result<()>
-    where
-        R: FrameStream,
-        S: FrameSink,
-    {
+        connection_rx: &mut DynFramedStream,
+        connection_tx: Arc<Mutex<DynFramedSink>>,
+    ) -> error::Result<()> {
         let channel_msg = OpenStandardMiningChannel {
             req_id: 10, // TODO? come up with request ID sequencing
             user: self
@@ -536,49 +500,30 @@ impl StratumConnectionHandler {
 
         self.status = None;
         response_msg.accept(self).await;
-        self.status
-            .take()
-            .unwrap_or(Err("Unexpected response for stratum open channel".into()))
+        self.status.take().unwrap_or(Err(format!(
+            "Unexpected response for stratum open channel: {:?}",
+            response_msg.header
+        )
+        .as_str()
+        .into()))
     }
 
-    async fn connect(&self) -> error::Result<v2::Framed> {
+    async fn connect(&self) -> error::Result<(DynFramedSink, DynFramedStream)> {
         let connection_details = self.client.connection_details();
         let addr = ii_wire::Address::from_str(connection_details.get_host_and_port().as_str())?;
         let mut client = ii_wire::Client::new(addr);
         // Attempt only once to connect (as the stratum client is being managed externally)
         let connection = client.next().await?;
 
-        // TODO this will be replaced by a 'connector' that will be set when building stratum
-        // client instance
-        let client_framed_stream = match connection_details.protocol {
-            // V2 secure connector
-            ClientProtocol::StratumV2(upstream_authority_public_key) => {
-                let noise_initiator =
-                    v2::noise::Initiator::new(upstream_authority_public_key.into_inner());
-                // Successful noise initiator handshake results in a stream/sink for V2 frames
-                noise_initiator.connect(connection).await?
-            }
-            // V2 insecure connector
-            ClientProtocol::StratumV2Insecure => {
-                ii_wire::Connection::<v2::Framing>::new(connection).into_inner()
-            }
-            // Anything else is considered a bug
-            _ => panic!("BUG: client supports only stratum V2 protocols!"),
-        };
-
-        Ok(client_framed_stream)
+        (self.client.get_connector)(connection).await
     }
 
     /// Starts mining session and provides the initial target negotiated by the upstream endpoint
-    async fn init_mining_session<R, S>(
+    async fn init_mining_session(
         mut self,
-        connection_rx: &mut R,
-        connection_tx: Arc<Mutex<S>>,
-    ) -> error::Result<ii_bitcoin::Target>
-    where
-        R: FrameStream,
-        S: FrameSink,
-    {
+        connection_rx: &mut DynFramedStream,
+        connection_tx: Arc<Mutex<DynFramedSink>>,
+    ) -> error::Result<ii_bitcoin::Target> {
         self.setup_mining_connection(connection_rx, connection_tx.clone())
             .await
             .context("Cannot setup stratum mining connection")?;
@@ -626,6 +571,19 @@ impl Handler for StratumConnectionHandler {
         self.status =
             Err(format!("Open channel error: {}", error_msg.code.to_string()).into()).into();
     }
+
+    async fn visit_reconnect(&mut self, _header: &Header, reconnect_msg: &Reconnect) {
+        let new_host: String = reconnect_msg.new_host.clone().into();
+        info!(
+            "Reconnect to: {} {}, received while connecting to: {}",
+            new_host,
+            reconnect_msg.new_port,
+            self.client.connection_details().get_host_and_port()
+        );
+        self.client
+            .reconnect(new_host, reconnect_msg.new_port)
+            .await;
+    }
 }
 
 /// Messages to control the extension channel
@@ -649,7 +607,7 @@ pub type ExtensionChannelFromStratumReceiver = mpsc::Receiver<ExtensionChannelMs
 /// Sender for Stratum --> Remote direction (stratum client end)
 pub type ExtensionChannelFromStratumSender = mpsc::Sender<ExtensionChannelMsg>;
 
-#[derive(Debug, ClientNode)]
+#[derive(ClientNode)]
 pub struct StratumClient {
     connection_details: Arc<StdMutex<ConnectionDetails>>,
     backend_info: Option<hal::BackendInfo>,
@@ -670,6 +628,9 @@ pub struct StratumClient {
     /// Frames intended for the specified extension will be forwarded into this channel (wrapped
     /// into ExtensionChannelMsg
     extension_channel_sender: Mutex<ExtensionChannelFromStratumSender>,
+    // Each protocol scheme provides a dedicated connector. This closure allows building the
+    // connector future at a time when the physical TCP connection is established
+    get_connector: connectors::DynConnectFn,
 }
 
 impl StratumClient {
@@ -691,21 +652,21 @@ impl StratumClient {
         let (sender_to_client, receiver_to_client) = mpsc::channel(1);
 
         tokio::spawn(async move {
-            info!(
+            trace!(
                 "Stratum extension: starting dummy task[{:?}]... ",
                 connection_details
             );
             // Make sure the sender is moved inside the dummy task to prevent it from being
             // dropped. Otherwise the receiver_to_client would immediately indicate end of stream
             let _sender_to_client = sender_to_client;
-            //
             while let Some(message) = receiver_from_client.next().await {
-                info!(
+                trace!(
                     "Stratum extension: dummy task[{:?}] received: {:?},",
-                    connection_details, message
+                    connection_details,
+                    message
                 );
             }
-            info!(
+            trace!(
                 "Stratum extension: dummy task[{:?}] terminated",
                 connection_details
             );
@@ -715,6 +676,7 @@ impl StratumClient {
 
     pub fn new(
         connection_details: ConnectionDetails,
+        get_connector: connectors::DynConnectFn,
         backend_info: Option<hal::BackendInfo>,
         solver: job::Solver,
         channel: Option<(
@@ -728,16 +690,12 @@ impl StratumClient {
         // or populate it with dummy endpoints. That way we can handle the endpoints uniformly
         // regardless whether they are configured or not (see `main_loop()`)
         // that would handle all events regards
-        let (extension_channel_receiver, extension_channel_sender) = channel.unwrap_or_else(|| {
-            info!(
-                "V2: starting dummy task for client: {:?}",
-                connection_details
-            );
-            Self::start_dummy_extension_task(connection_details.clone())
-        });
+        let (extension_channel_receiver, extension_channel_sender) =
+            channel.unwrap_or_else(|| Self::start_dummy_extension_task(connection_details.clone()));
 
         Self {
             connection_details: Arc::new(StdMutex::new(connection_details)),
+            get_connector,
             backend_info,
             status: Default::default(),
             client_stats: Default::default(),
@@ -767,15 +725,9 @@ impl StratumClient {
     /// TODO: temporarily, this became an associated method so that we don't have to generalize
     ///  with type parameters the full StratumClient struct. Once this is done, we will use the
     ///  new internal field connection_tx
-    async fn send_msg<M, S, E>(connection_tx: &Arc<Mutex<S>>, message: M) -> error::Result<()>
+    async fn send_msg<M>(connection_tx: &Arc<Mutex<DynFramedSink>>, message: M) -> error::Result<()>
     where
         M: TryInto<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>,
-        E: Into<error::Error>,
-        // TODO use S: FrameSink once the trait is adjusted to deal with payload specific error
-        S: Sink<<Framing as ii_wire::Framing>::Tx, Error = E>
-            + std::marker::Unpin
-            + std::fmt::Debug
-            + 'static,
     {
         let frame = message.try_into()?;
         match connection_tx
@@ -803,7 +755,7 @@ impl StratumClient {
             }
             // pass any other extension down the line
             _ => {
-                info!(
+                debug!(
                     "Received protocol extension frame: {:x?} passing down",
                     frame
                 );
@@ -815,7 +767,7 @@ impl StratumClient {
                     .await
                     .try_send(ExtensionChannelMsg::Frame(frame))
                 {
-                    info!(
+                    debug!(
                         "Cannot pass extension frame, extension channel not available: {:?}",
                         e
                     );
@@ -825,16 +777,12 @@ impl StratumClient {
         Ok(())
     }
 
-    async fn main_loop<R, S>(
+    async fn main_loop(
         self: Arc<Self>,
-        mut connection_rx: R,
-        connection_tx: Arc<Mutex<S>>,
+        mut connection_rx: DynFramedStream,
+        connection_tx: Arc<Mutex<DynFramedSink>>,
         mut event_handler: StratumEventHandler,
-    ) -> error::Result<()>
-    where
-        R: FrameStream,
-        S: FrameSink,
-    {
+    ) -> error::Result<()> {
         let mut solution_receiver = self.solution_receiver.lock().await;
         let mut extension_channel_rx = self.extension_channel_receiver.lock().await;
         let mut solution_handler = StratumSolutionHandler::new(self.clone(), connection_tx.clone());
@@ -882,15 +830,12 @@ impl StratumClient {
         Ok(())
     }
 
-    async fn run_job_solver<R, S>(
+    async fn run_job_solver(
         self: Arc<Self>,
-        connection_rx: R,
-        connection_tx: Arc<Mutex<S>>,
+        connection_rx: DynFramedStream,
+        connection_tx: Arc<Mutex<DynFramedSink>>,
         init_target: ii_bitcoin::Target,
-    ) where
-        R: FrameStream,
-        S: FrameSink,
-    {
+    ) {
         let event_handler = StratumEventHandler::new(self.clone(), init_target);
         // TODO consider changing main_loop to accept Arc<Self> and build the solution_handler
         //  along with solution handler communication channels inside of the main_loop.
@@ -915,8 +860,12 @@ impl StratumClient {
             .await
             .map_err(|_| error::ErrorKind::General("Connection timeout".to_string()).into())
         {
-            Ok(Ok(framed_connection)) => {
-                let (framed_sink, mut framed_stream) = framed_connection.split();
+            Ok(Ok((framed_sink, mut framed_stream))) => {
+                info!(
+                    "Connected {} to: {}",
+                    connection_details.protocol,
+                    connection_details.get_host_and_port()
+                );
                 let framed_sink = Arc::new(Mutex::new(framed_sink));
                 match connection_handler
                     .init_mining_session(&mut framed_stream, framed_sink.clone())
@@ -933,8 +882,8 @@ impl StratumClient {
                         }
                     }
                     Ok(Err(e)) | Err(e) => {
-                        info!(
-                            "Failed to negotiation initial V2 target: at {}, user={} ({:?}",
+                        debug!(
+                            "Failed to negotiate initial V2 target: at {}, user={} ({:?})",
                             host_and_port, user, e
                         );
                         // TODO consolidate this, so that we have exactly 1 place where we
@@ -944,7 +893,7 @@ impl StratumClient {
                 }
             }
             Ok(Err(e)) | Err(e) => {
-                info!(
+                error!(
                     "Failed to connect to {}, user={} {:?}",
                     host_and_port, user, e
                 );
@@ -988,6 +937,11 @@ impl StratumClient {
             // TODO: Count as a discarded solution?
             self.solution_receiver.lock().await.flush();
             self.solutions.lock().await.clear();
+            // Flush all stop events before stopping!
+            while let Ok(Some(_)) = stop_receiver.try_next() {}
+            // NOTE: No new stop event cannot be received in this stopping process (another one can
+            // be received after calling `can_stop` method where state can be restarted to starting
+            // process)
 
             if self.status.can_stop() {
                 // NOTE: it is not safe to add here any code!
@@ -996,6 +950,33 @@ impl StratumClient {
             }
             // Restarting
         }
+    }
+
+    /// Process a reconnect to a specified host and port. Note, that reconnect doesn't specify
+    /// pool authority key. It is not possible (for security reasons) to reconnect to a different
+    /// entity that has a different key. The prevents hijacking the hashrate should the upstream
+    /// server be compromised.
+    /// `host` where to reconnect to (
+    async fn reconnect(&self, new_host: String, new_port: u16) {
+        let mut connection_details = self
+            .connection_details
+            .lock()
+            .expect("BUG: cannot lock connection details");
+
+        // Change current connection descriptor
+        if new_host.len() > 0 {
+            // Detect change in host
+            if new_host != connection_details.host {
+                connection_details.host = new_host;
+            }
+            // Detect change in port
+            if new_port != 0 && connection_details.port != new_port {
+                connection_details.port = new_port;
+            }
+        }
+        drop(connection_details);
+        // Ignore the result
+        self.status.initiate_stopping(|| self.stop());
     }
 }
 
@@ -1041,5 +1022,16 @@ impl fmt::Display for StratumClient {
             "{}://{}@{}",
             connection_details.protocol, connection_details.host, connection_details.user
         )
+    }
+}
+
+/// TODO: temporary custom Debug implementation that omits most of the fields. The reason is that
+/// the derived implementation cannot cover the DynConnectFn
+impl fmt::Debug for StratumClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let connection_details = self.connection_details();
+        f.debug_struct("StratumClient")
+            .field("connection_details", &connection_details)
+            .finish()
     }
 }

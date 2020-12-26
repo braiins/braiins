@@ -100,7 +100,7 @@ def main(args):
         # check compatibility of remote server
         check_compatibility(ssh)
 
-        if not args.no_backup:
+        if args.backup:
             mac = backup.ssh_mac(ssh)
             backup_dir = backup.get_output_dir(mac)
             if not platform.backup_firmware(args, ssh, backup_dir, mac):
@@ -142,15 +142,32 @@ def main(args):
         hw_id = hwid.generate()
 
         # get other stage1 parameters
+        if args.psu_power_limit == 0:
+            # 0 is special parameter for disabling autotuning
+            psu_power_limit = ''
+        else:
+            psu_power_limit = args.psu_power_limit or 'default'
+
+        if args.keep_hostname:
+            keep_hostname = 'yes'
+        elif args.no_keep_hostname:
+            keep_hostname = 'no'
+        else:
+            # keep only user defined hostname and skip factory one (default behaviour)
+            keep_hostname = 'cond'
+
+        pool_user = args.pool_user or ''
         keep_network = 'no' if args.no_keep_network else 'yes'
-        keep_hostname = 'yes' if args.keep_hostname else 'no'
+        keep_pools = 'no' if args.no_keep_pools else 'yes'
         dry_run = 'yes' if args.dry_run else 'no'
 
         # run stage1 upgrade process
         try:
             print("Upgrading firmware...")
             stdout, _ = ssh.run('cd', TARGET_DIR, '&&', 'ls', '-l', '&&',
-                                "/bin/sh stage1.sh '{}' {} {} {}".format(hw_id, keep_network, keep_hostname, dry_run))
+                                "/bin/sh stage1.sh '{}' '{}' '{}' '{}' '{}' '{}' '{}'"
+                                .format(hw_id, pool_user, psu_power_limit, keep_network, keep_hostname, keep_pools,
+                                        dry_run))
         except subprocess.CalledProcessError as error:
             cleanup_system(ssh)
             print()
@@ -187,14 +204,22 @@ if __name__ == "__main__":
 
     parser.add_argument('hostname',
                         help='hostname of miner with original firmware')
-    parser.add_argument('--no-backup', action='store_true',
-                        help='skip miner backup before upgrade')
+    parser.add_argument('--backup', action='store_true',
+                        help='do miner backup before upgrade')
     parser.add_argument('--no-nand-backup', action='store_true',
                         help='skip full NAND backup (config is still being backed up)')
+    parser.add_argument('--pool-user', nargs='?',
+                        help='set username and workername for default pool')
+    parser.add_argument('--psu-power-limit', nargs='?', type=int,
+                        help='set PSU power limit (in watts)')
     parser.add_argument('--no-keep-network', action='store_true',
                         help='do not keep miner network configuration (use DHCP)')
+    parser.add_argument('--no-keep-pools', action='store_true',
+                        help='do not keep miner pool configuration')
+    parser.add_argument('--no-keep-hostname', action='store_true',
+                        help='do not keep miner hostname and generate new one based on MAC')
     parser.add_argument('--keep-hostname', action='store_true',
-                        help='keep miner hostname')
+                        help='force to keep any miner hostname')
     parser.add_argument('--no-wait', action='store_true',
                         help='do not wait until system is fully upgraded')
     parser.add_argument('--dry-run', action='store_true',

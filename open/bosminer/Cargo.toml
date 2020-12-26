@@ -3,6 +3,7 @@
 members = [
     "bosminer",
     "bosminer-am1-s9",
+    "bosminer-antminer",
     "bosminer-config",
     "bosminer-erupter",
     "bosminer-macros",

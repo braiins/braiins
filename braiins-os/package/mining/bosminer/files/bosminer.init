@@ -36,6 +36,76 @@ get_env_config()
 	[ "$bos_mode" == "nand" ] && fw_printenv -n $1 2>/dev/null || echo ""
 }
 
+begins_with() {
+	case "$2" in
+		"$1"*) true;;
+		*) false;;
+	esac
+}
+
+has_substr() {
+	case "$2" in
+		*"$1"*) true;;
+		*) false;;
+	esac
+}
+
+generate_pools() {
+	local pool_count="$1"
+
+	[ $pool_count -gt 0 ] || return 0
+
+	for i in $(seq 1 $pool_count); do
+		local pool_host=$(get_env_config miner_pool_host_$i)
+		local pool_port=$(get_env_config miner_pool_port_$i)
+		local pool_user=$(get_env_config miner_pool_user_$i)
+		local pool_pass=$(get_env_config miner_pool_pass_$i)
+		local pool_url="${pool_host}${pool_port:+:$pool_port}"
+
+		# Detect stratum server
+		begins_with "stratum+tcp://" "$pool_url"
+		local stratum=$?
+
+		if [ $stratum -eq 0 ] || ! has_substr "://" "$pool_url"; then
+			if [ $stratum -eq 0 ]; then
+				cat >> "$CONF" <<-END
+
+					[[group.pool]]
+					url = '${pool_url}'
+				END
+			else
+				cat >> "$CONF" <<-END
+
+					[[group.pool]]
+					# url = '${pool_url}'
+					url = 'stratum+tcp://${pool_url}'
+				END
+			fi
+			cat >> "$CONF" <<-END
+				user = '${pool_user:-!non-existent-user!}'
+			END
+			[ -n "$pool_pass" ] && \
+			cat >> "$CONF" <<-END
+				password = '${pool_pass}'
+			END
+		else
+			cat >> "$CONF" <<-END
+
+				# Incompatible pool
+				# [[group.pool]]
+				# url = '${pool_url}'
+				# user = '${pool_user}'
+			END
+			[ -n "$pool_pass" ] && \
+			cat >> "$CONF" <<-END
+				# password = '${pool_pass}'
+			END
+		fi
+	done
+
+	return 0
+}
+
 boot()
 {
 	if [ ! -f "$CONF" ]; then
@@ -45,16 +115,38 @@ boot()
 		local pool_path=$(get_env_config miner_pool_path)
 		local pool_user=$(get_env_config miner_pool_user)
 		local pool_pass=$(get_env_config miner_pool_pass)
+		local pool_count=$(get_env_config miner_pool_count)
 		local miner_freq=$(get_env_config miner_freq)
 		local miner_voltage=$(get_env_config miner_voltage)
 		local miner_fixed_freq=$(get_env_config miner_fixed_freq)
+		local miner_psu_power_limit=$(get_env_config miner_psu_power_limit)
+		local autotuning_enabled="yes"
+
+		case $miner_psu_power_limit in
+			default)
+				miner_psu_power_limit=
+			;;
+			"")
+				autotuning_enabled="no"
+				miner_psu_power_limit=
+			;;
+		esac
+
+		# use the public key of our pool that allows authentication of the default Stratum V2 host
+		[ -z "$pool_path" -a -z "$pool_host" ] && \
+		pool_path="u95GEReVMjK6k5YqiSFNqqTnKU4ypU2Wm8awa6tmbmDmk1bWt"
 
 		pool_host=${pool_host:-stratum2+tcp://v2.stratum.slushpool.com}
-		pool_user=${pool_user:-!non-existent-user!}
+
+		pool_count=${pool_count:-0}
+		[ $pool_count -gt 0 ] || pool_user=${pool_user:-!non-existent-user!}
+
+		local plus=""
+		case $BOS_VERSION_SUFFIX in *plus*) plus="+";; esac
 
 		cat > "$CONF" <<-END
 			[format]
-			version = '1.0'
+			version = '1.0${plus}'
 			model = 'Antminer S9'
 			generator = 'init_script'
 			timestamp = $(date +%s)
@@ -70,6 +162,9 @@ boot()
 
 			[[group]]
 			name = 'Default'
+		END
+		[ -n "$pool_user" ] && \
+		cat >> "$CONF" <<-END
 
 			[[group.pool]]
 			url = '${pool_host}${pool_port:+:$pool_port}${pool_path:+/$pool_path}'
@@ -79,9 +174,20 @@ boot()
 			url = 'stratum+tcp://stratum.slushpool.com:3333'
 			user = '${pool_user}'
 		END
-		[ -n "$pool_pass" ] && \
+		[ -n "$pool_user" -a -n "$pool_pass" ] && \
 		cat >> "$CONF" <<-END
 			password = '${pool_pass}'
+		END
+		generate_pools $pool_count
+		[ -n "$plus" -a "$autotuning_enabled" == "yes" ] && \
+		cat >> "$CONF" <<-END
+
+			[autotuning]
+			enabled = true
+		END
+		[ -n "$plus" -a -n "$miner_psu_power_limit" ] && \
+		cat >> "$CONF" <<-END
+			psu_power_limit = ${miner_psu_power_limit}
 		END
 	fi
 	start "$@"

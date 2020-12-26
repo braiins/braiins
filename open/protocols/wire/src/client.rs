@@ -34,13 +34,8 @@ use ii_async_compat::prelude::*;
 use thiserror::Error;
 
 #[derive(Error, PartialEq, Eq, Debug)]
+#[error("Invalid endpoint address syntax (host:port)")]
 pub struct AddressParseError;
-
-impl fmt::Display for AddressParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid endpoint address syntax (host:port)")
-    }
-}
 
 /// This is a tuple of a `String` holding a hostname/IP address
 /// and a port number. `Address` can be parsed from a string in the

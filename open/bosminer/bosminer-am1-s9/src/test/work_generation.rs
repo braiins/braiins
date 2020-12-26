@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -25,7 +25,8 @@ use ii_logging::macros::*;
 use super::*;
 use crate::bm1387::MidstateCount;
 use crate::fan;
-use crate::{FrequencySettings, HashChain, Solution};
+use crate::hashchain;
+use crate::registry;
 
 use bosminer::work;
 
@@ -58,8 +59,8 @@ fn prepare_test_work(midstate_count: usize) -> work::Assignment {
 
 /// Task that receives solutions from hardware and sends them to channel
 async fn receiver_task(
-    hash_chain: Arc<HashChain>,
-    solution_sender: mpsc::UnboundedSender<Solution>,
+    hash_chain: Arc<hashchain::HashChain>,
+    solution_sender: mpsc::UnboundedSender<hashchain::Solution>,
 ) {
     let mut rx_io = hash_chain.take_work_rx_io().await;
     let target = ii_bitcoin::Target::from_pool_difficulty(ASIC_DIFFICULTY);
@@ -68,18 +69,19 @@ async fn receiver_task(
         let (rx_io_out, solution) = rx_io.recv_solution().await.expect("recv solution");
         rx_io = rx_io_out;
         solution_sender
-            .unbounded_send(Solution::from_hw_solution(&solution, target))
+            .unbounded_send(hashchain::Solution::from_hw_solution(&solution, target))
             .expect("solution send failed");
     }
 }
 
 /// Task that receives work from channel and sends it to HW
 async fn sender_task(
-    hash_chain: Arc<HashChain>,
+    hash_chain: Arc<hashchain::HashChain>,
     mut work_receiver: mpsc::UnboundedReceiver<work::Assignment>,
 ) {
     let mut tx_io = hash_chain.take_work_tx_io().await;
-    let mut work_registry = registry::WorkRegistry::new(tx_io.work_id_count());
+    let mut work_registry =
+        registry::WorkRegistry::<hashchain::Solution>::new(tx_io.work_id_count());
 
     loop {
         tx_io.wait_for_room().await.expect("wait for tx room");
@@ -92,7 +94,7 @@ async fn sender_task(
 
 async fn send_and_receive_test_workloads<'a>(
     work_sender: &'a mpsc::UnboundedSender<work::Assignment>,
-    solution_receiver: &'a mut mpsc::UnboundedReceiver<Solution>,
+    solution_receiver: &'a mut mpsc::UnboundedReceiver<hashchain::Solution>,
     n_send: usize,
     expected_solution_count: usize,
 ) {
@@ -128,18 +130,19 @@ async fn send_and_receive_test_workloads<'a>(
     );
 }
 
-async fn start_hchain(monitor_tx: mpsc::UnboundedSender<monitor::Message>) -> HashChain {
+async fn start_hchain(monitor_tx: mpsc::UnboundedSender<monitor::Message>) -> hashchain::HashChain {
     let hashboard_idx = config::S9_HASHBOARD_INDEX;
     let gpio_mgr = gpio::ControlPinManager::new();
     let voltage_ctrl_backend = Arc::new(power::I2cBackend::new(0));
     let fan_control = fan::Control::new().expect("failed initializing fan controller");
-    let reset_pin = ResetPin::open(&gpio_mgr, hashboard_idx).expect("failed to make pin");
-    let plug_pin = PlugPin::open(&gpio_mgr, hashboard_idx).expect("failed to make pin");
+    let reset_pin =
+        hashchain::ResetPin::open(&gpio_mgr, hashboard_idx).expect("failed to make pin");
+    let plug_pin = hashchain::PlugPin::open(&gpio_mgr, hashboard_idx).expect("failed to make pin");
 
     // turn on fans to full (no temp control)
     fan_control.set_speed(fan::Speed::FULL_SPEED);
 
-    let mut hash_chain = crate::HashChain::new(
+    let mut hash_chain = hashchain::HashChain::new(
         reset_pin,
         plug_pin,
         voltage_ctrl_backend.clone(),
@@ -153,7 +156,7 @@ async fn start_hchain(monitor_tx: mpsc::UnboundedSender<monitor::Message>) -> Ha
 
     hash_chain
         .init(
-            &FrequencySettings::from_frequency(
+            &hashchain::FrequencySettings::from_frequency(
                 (config::DEFAULT_FREQUENCY_MHZ * 1_000_000.0) as usize,
             ),
             *crate::power::OPEN_CORE_VOLTAGE,

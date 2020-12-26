@@ -129,6 +129,7 @@ pub enum StatusCode {
     TempCtrl = 200,
     Temps = 201,
     Fans = 202,
+    TunerStatus = 203,
 
     // info status codes
     PoolAlreadyEnabled = 49,

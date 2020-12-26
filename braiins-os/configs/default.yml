@@ -6,19 +6,20 @@ bos:
   # select NAND firmware which is used for boot
   firmware: 1
 
-miner:
-  # default miner pool
-  pool:
-    host: stratum2+tcp://v2.stratum.slushpool.com
+#miner:
+#  # default miner pool
+#  pool:
+#    host: stratum2+tcp://v2.stratum.slushpool.com
 #    port: 3336
-    path: u95GEReVMjK6k5YqiSFNqqTnKU4ypU2Wm8awa6tmbmDmk1bWt
-    user: '!non-existent-user!'
+#    path: u95GEReVMjK6k5YqiSFNqqTnKU4ypU2Wm8awa6tmbmDmk1bWt
+#    user: '!non-existent-user!'
 #    pass: x
-  # HW specific settings
+#  # HW specific settings
 #  hw:
 #    freq: 550
 #    voltage: '0706'
 #    fixed_freq: true
+#    psu_power_limit: 1420
 
 net:
   # default bOS device MAC address
@@ -35,6 +36,8 @@ net:
 build:
   # name of subdirectory in the build directory
   name: '{target}'
+  # record used in feeds to distinguish current build
+  feeds_record: bos_firmware
   # file with default OpenWrt configuration
   config: defaults/release.conf
   # file with list of packages for build images
@@ -77,19 +80,18 @@ remote:
   # default configuration for fetching latest repository
   fetch: no
   # always fetch each repositories (it cannot be overridden)
-  fetch_always: no
+  fetch_always: yes
   # location aliases for remote repositories
   aliases:
     bos: '{meta_repo}'
     openwrt_feed: git://git.openwrt.org/feed
   # default location for remote repositories
   location: bos
-  # default branch for repositories
-  branch: '{meta_branch}'
   # list of remote repositories
   repos:
     lede:
       project: lede.git
+      branch: 9340bcdfc7d2ed4ebac2d74112dd33fc91ff9744
     lede-packages:
       location: openwrt_feed
       project: packages.git
@@ -104,15 +106,19 @@ remote:
       branch: ac6415e61f147a6892fd2785337aec93ddc68fa9
     luci:
       project: luci.git
+      branch: eb9d9170258e063aa41630f0bbf8bbae6bb8b6d7
     binary:
       config_name: BINARY
       project: braiins-bin.git
+      branch: d86b1f82ea2680cb5c78e161b8e9b576729f94f1
     u-boot:
       config_name: UBOOT
       project: u-boot-xlnx.git
+      branch: 9a9a66957e3ec1bad81d8bc9a6e0ea54ca371b30
     linux:
       config_name: KERNEL
       project: linux-xlnx.git
+      branch: 15b13cb5ef124be71051d677890449384c34a3b9
     # it is possible to continue with any user repositories
 
 monorepo:
@@ -150,7 +156,7 @@ feeds:
 
 uenv:
   # boot Linux from SD instead of NAND
-  mac: yes
+  mac: no
   # reset firmware to factory settings
   factory_reset: no
   # use for factory reset images from SD
@@ -158,13 +164,13 @@ uenv:
   # boot Linux from SD instead of NAND
   sd_boot: no
 
-upgrade:
-  # specify previous firmware version used as a base for current version
-  # this is useful for beta releases where factory reset return system to
-  # previous version
-  base_system:
-    version: 2019-02-21-0-572dd48c
-    dirpath: '{build_dir}/binary/{target}/upgrade/{subtarget}/2019-02-21-0-572dd48c'
+#upgrade:
+#  # specify previous firmware version used as a base for current version
+#  # this is useful for beta releases where factory reset return system to
+#  # previous version
+#  base_system:
+#    version: 2019-02-21-0-572dd48c
+#    dirpath: '{build_dir}/binary/{target}/upgrade/{subtarget}/2019-02-21-0-572dd48c'
 
 deploy:
   # default targets
@@ -239,3 +245,16 @@ deploy:
     username: root
     # ssh password
     password:
+
+release:
+  branch:
+    devel: bos-devel
+    stable: bos-stable
+    release: bos-release
+    whatsnew: bos-devel-whatsnew
+  version_suffix:
+    stable: -stable
+    release:
+  feeds_record:
+    stable: bos_firmware_rc
+    release: bos_firmware

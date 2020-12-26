@@ -22,7 +22,7 @@
 # of such proprietary license or if you have any other questions, please
 # contact us at opensource@braiins.com.
 
-if [ "$#" -ne 4 ]; then
+if [ "$#" -ne 7 ]; then
 	echo "Illegal number of parameters" >&2
 	exit 1
 fi
@@ -30,9 +30,12 @@ fi
 set -e
 
 MINER_HWID="$1"
-KEEP_NET_CONFIG="$2"
-KEEP_HOSTNAME="$3"
-DRY_RUN="$4"
+MINER_POOL_USER="$2"
+MINER_PSU_POWER_LIMIT="$3"
+KEEP_NET_CONFIG="$4"
+KEEP_HOSTNAME="$5"
+KEEP_POOLS="$6"
+DRY_RUN="$7"
 
 UBOOT_ENV_CFG="uboot_env.config"
 
@@ -71,6 +74,20 @@ sed_variables() {
 		args="$args -e 's,\${$name},$value,g'"
 	done
 	eval sed -i $args "$input"
+}
+
+json_get() {
+	local file="$1"
+	local jpath="$2"
+
+	awk -f jq.awk -f JSON.awk -v STREAM=0 -v _JQ_SELECT="$jpath" "$file"
+}
+
+json_array_len() {
+	local file="$1"
+	local jpath="$2"
+
+	awk -f jq.awk -f JSON.awk -v STREAM=0 -v _JQ_COUNT="$jpath" "$file"
 }
 
 # include firmware specific code
@@ -115,6 +132,11 @@ fi
 
 echo "U-Boot configuration..."
 
+[ x"$KEEP_POOLS" == x"yes" ] || MINER_POOL_COUNT=
+
+# set pool count to zero when it is not set
+MINER_POOL_COUNT=${MINER_POOL_COUNT:-0}
+
 fw_setenv -c "$UBOOT_ENV_CFG" --script - <<-EOF
 	# bitstream metadata
 	bitstream_off ${DST_BITSTREAM_OFF}
@@ -138,12 +160,23 @@ fw_setenv -c "$UBOOT_ENV_CFG" --script - <<-EOF
 	#
 	# set miner configuration
 	miner_hwid ${MINER_HWID}
+	miner_pool_user ${MINER_POOL_USER}
 	#
 	# s9 specific configuration
 	miner_freq ${MINER_FREQ}
 	miner_voltage ${MINER_VOLTAGE}
 	miner_fixed_freq ${MINER_FIXED_FREQ}
+	miner_psu_power_limit ${MINER_PSU_POWER_LIMIT}
+	#
+	# user defined pools
+	miner_pool_count ${MINER_POOL_COUNT}
 EOF
+for i in $(seq 1 $MINER_POOL_COUNT); do
+	eval echo miner_pool_host_$i '$MINER_POOL_HOST_'$i
+	eval echo miner_pool_port_$i '$MINER_POOL_PORT_'$i
+	eval echo miner_pool_user_$i '$MINER_POOL_USER_'$i
+	eval echo miner_pool_pass_$i '$MINER_POOL_PASS_'$i
+done | fw_setenv -c "$UBOOT_ENV_CFG" --script -
 
 # set network konfiguration
 if [ x"$KEEP_NET_CONFIG" == x"yes" ]; then

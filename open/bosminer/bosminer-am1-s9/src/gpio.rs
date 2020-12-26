@@ -20,37 +20,32 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use embedded_hal;
 use sysfs_gpio;
 
-/// Helper struct for altering output pins which implements OutputPin trait
+/// Helper struct for altering output pins
 #[derive(Clone)]
 pub struct PinOut(sysfs_gpio::Pin);
 
-impl embedded_hal::digital::v2::OutputPin for PinOut {
-    type Error = sysfs_gpio::Error;
-
-    fn set_low(&mut self) -> Result<(), Self::Error> {
+impl PinOut {
+    pub fn set_low(&mut self) -> Result<(), sysfs_gpio::Error> {
         self.0.set_value(0)
     }
 
-    fn set_high(&mut self) -> Result<(), Self::Error> {
+    pub fn set_high(&mut self) -> Result<(), sysfs_gpio::Error> {
         self.0.set_value(1)
     }
 }
 
-/// Helper struct for reading input pins which implements InputPin trait
+/// Helper struct for reading input pins
 #[derive(Clone)]
 pub struct PinIn(sysfs_gpio::Pin);
 
-impl embedded_hal::digital::v2::InputPin for PinIn {
-    type Error = sysfs_gpio::Error;
-
-    fn is_high(&self) -> Result<bool, Self::Error> {
+impl PinIn {
+    pub fn is_high(&self) -> Result<bool, sysfs_gpio::Error> {
         self.0.get_value().map(|value| value > 0)
     }
 
-    fn is_low(&self) -> Result<bool, Self::Error> {
+    pub fn is_low(&self) -> Result<bool, sysfs_gpio::Error> {
         self.0.get_value().map(|value| value == 0)
     }
 }
@@ -123,7 +118,6 @@ impl ControlPinManager {
 #[cfg(test)]
 mod test {
     use super::*;
-    use embedded_hal::digital::v2::InputPin;
 
     #[test]
     fn test_get_pin_in_check_plug_pin_that_exists() {

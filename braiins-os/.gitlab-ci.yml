@@ -50,17 +50,8 @@ braiins-os-build:
         # fly with detached heads produced by gitlab
         - eval sed "s/\{CI_JOB_TOKEN\}/${CI_JOB_TOKEN}/g" "$BOS_LOCAL_CONFIG" > .local.yml
 
-        # Build system files
-        - ./bb.py --platform $TARGET prepare
-        - ./bb.py --platform $TARGET clean
-        - ./bb.py --platform $TARGET prepare --update-feeds
-        - ./bb.py --platform $TARGET build
-        - ./bb.py --platform $TARGET deploy
-
-        # Create disk image
-        - ./mkimage.sh
-        - upgrade_file="braiins-os_am1-s9_ssh_$(./bb.py build-version).tar.gz"
-        - ./mkimage.sh output/$TARGET/sd output/$TARGET/upgrade/$upgrade_file output/$TARGET/
+        # run a clean os build and assemble sd card image
+        - ./build.sh
 
         # Cut down artifacts path
         - mv output/$TARGET ../$BOS_OUTPUT_DIR
@@ -73,23 +64,3 @@ braiins-os-build:
         expire_in: 1 week
         paths:
             - $BOS_OUTPUT_DIR
-
-pages:
-    stage: deploy
-    image: $BOS_BUILDER_IMG
-
-    only:
-        - bos-devel
-
-    variables:
-        BOS_OUTPUT_DIR: braiins-os_$BOS_SUBTARGET
-
-    script:
-        - mkdir public/
-        - build_job=$(< $BOS_OUTPUT_DIR/jobid)
-        - build_version=$(cd braiins-os; ./bb.py build-version)
-        - echo "<html><body>build <a href='${CI_PROJECT_URL}/-/jobs/${build_job}/artifacts/browse'>${build_version}</a></body></html>" > public/index.html
-
-    artifacts:
-        paths:
-            - public

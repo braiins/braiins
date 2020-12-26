@@ -26,14 +26,15 @@
 set -e
 
 usage() {
-	echo "usage: bos [-h] {factory_reset,get_factory_cfg,run_recovery,ip_report} ..."
+	echo "usage: bos [-h] {factory_reset,get_factory_cfg,run_recovery,ip_report,nightly_feeds} ..."
 	echo
 	echo "positional arguments:"
-	echo "  {factory_reset,get_factory_cfg,run_recovery,ip_report}"
+	echo "  {factory_reset,get_factory_cfg,run_recovery,ip_report,nightly_feeds}"
 	echo "    factory_reset       reboot and initiate factory reset"
 	echo "    get_factory_cfg     get factory configuration for specified attribute"
 	echo "    run_recovery        reboot to recovery mode"
 	echo "    ip_report           broadcast IP and MAC address of device"
+	echo "    nightly_feeds       turn on or off feeds with nightly build versions"
 	echo
 	echo "optional arguments:"
 	echo "  -h, --help            show this help message and exit"
@@ -120,6 +121,68 @@ ip_report() {
 	echo -n "$format" | socat - "$socat_arg"
 }
 
+#nightly_feeds_status() {
+#	local record="$1"
+#	awk \
+#		'BEGIN {res="off"} /^[^#]/ && $2 ~ /^'"$record"'$/ {res="on " FILENAME} END {print res}' \
+#		/etc/opkg/*.conf
+#}
+
+list_enabled_feeds() {
+	local record="$1"
+	awk '/^[^#]/ && $2 == "'"$record"'" {print FILENAME; nextfile}' /etc/opkg/*.conf
+}
+
+list_disabled_feeds() {
+	local record="$1"
+	grep -l '^[#]\+[ ]*[^ ]\+ '"$record"' ' /etc/opkg/*.conf
+}
+
+nightly_feeds_status() {
+	local count=$(list_enabled_feeds "$record" | wc -l)
+	[ $count -gt 0 ] && echo "on" || echo "off"
+}
+
+nightly_feeds() {
+	if [ $# -gt 1 -o \( $# -eq 1 -a "$1" != 'on' -a "$1" != 'off' \) ]; then
+		echo "command 'nightly_feeds' takes only one argument [on|off] or none" >&2
+		exit 1
+	fi
+	local record="bos_firmware_nightly"
+	local file line
+	case $1 in
+		on)
+			if [ $(nightly_feeds_status "$record") == "on" ]; then
+				echo "Nightly feeds are already enabled!" >&2
+			else
+				file=$(list_disabled_feeds "$record" | tail -n1)
+				if [ -z "$file" ]; then
+					echo "Cannot find any disabled nightly record '$record' in any feeds configuration file!" >&2
+					exit 1
+				fi
+				sed -i 's/^[#]\+[ ]*\([^ ]\+ '"$record"' .*\)/\1/' "$file"
+				echo "Enabling nightly record '$record' in '$file'"
+			fi
+		;;
+		off)
+			if [ $(nightly_feeds_status "$record") == "off" ]; then
+				echo "Nightly feeds are already disabled!" >&2
+			else
+				list_enabled_feeds "$record" | \
+				# comment all enabled feed records
+				while IFS= read -r file; do
+					sed -i 's/\(^[^ ]\+ '"$record"' .*\)/# \1/' "$file"
+					echo "Disabling nightly record '$record' in '$file'"
+					disabled="yes"
+				done
+			fi
+		;;
+		*)
+			nightly_feeds_status "$record"
+		;;
+	esac
+}
+
 # check number of arguments
 if [ $# -lt 1 ]; then
 	echo "missing command argument" >&2
@@ -130,7 +193,7 @@ fi
 command="$1"
 
 case $command in
-	factory_reset|get_factory_cfg|run_recovery|ip_report)
+	factory_reset|get_factory_cfg|run_recovery|ip_report|nightly_feeds)
 		shift
 		$command "$@"
 	;;

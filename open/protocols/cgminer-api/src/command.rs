@@ -62,6 +62,7 @@ pub const DEVDETAILS: &str = "devdetails";
 pub const TEMPCTRL: &str = "tempctrl";
 pub const TEMPS: &str = "temps";
 pub const FANS: &str = "fans";
+pub const TUNERSTATUS: &str = "tunerstatus";
 
 pub type Result<T> = std::result::Result<T, response::Error>;
 /// Type describing command table

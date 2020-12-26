@@ -28,14 +28,15 @@
 set -e
 
 usage() {
-	echo "usage: miner [-h] {factory_reset,get_factory_cfg,run_recovery,ip_report,fault_light,nand_install} ..."
+	echo "usage: miner [-h] {factory_reset,get_factory_cfg,run_recovery,ip_report,nightly_feeds,fault_light,nand_install} ..."
 	echo
 	echo "positional arguments:"
-	echo "  {factory_reset,get_factory_cfg,run_recovery,ip_report,fault_light,nand_install}"
+	echo "  {factory_reset,get_factory_cfg,run_recovery,ip_report,nightly_feeds,fault_light,nand_install}"
 	echo "    factory_reset       reboot and initiate factory reset"
 	echo "    get_factory_cfg     get factory configuration for specified attribute"
 	echo "    run_recovery        reboot to recovery mode"
 	echo "    ip_report           broadcast IP and MAC address of device"
+	echo "    nightly_feeds       turn on or off feeds with nightly build versions"
 	echo "    fault_light         turn on or off miner's fault LED"
 	echo "    nand_install        install/reinstall firmware to NAND"
 	echo
@@ -57,6 +58,10 @@ run_recovery() {
 
 ip_report() {
 	exec bos ip_report "$@"
+}
+
+nightly_feeds() {
+	exec bos nightly_feeds "$@"
 }
 
 fault_light() {
@@ -118,7 +123,7 @@ nand_install() {
 
 	echo "Running stage1 upgrade script..."
 	set +e
-	if /bin/sh "$stage1_script" "$miner_hwid" yes cond no; then
+	if /bin/sh "$stage1_script" "$miner_hwid" "" default yes cond no no; then
 		echo "Upgrade stage1 has been successful!"
 	else
 		echo "Upgrade stage1 failed"
@@ -147,7 +152,7 @@ fi
 command="$1"
 
 case $command in
-	factory_reset|get_factory_cfg|run_recovery|ip_report|\
+	factory_reset|get_factory_cfg|run_recovery|ip_report|nightly_feeds|\
 	fault_light|nand_install)
 		shift
 		$command "$@"

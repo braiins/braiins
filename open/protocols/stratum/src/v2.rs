@@ -67,6 +67,16 @@ impl<T> FramedSink for T where
 {
 }
 
+/// Helper type for outgoing V2 frames when run time support for multiple sink types (e.g.
+/// TcpStream, mpsc::Sender etc.) is needed
+pub type DynFramedSink = std::pin::Pin<
+    Box<
+        dyn Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
+            + Send
+            + std::marker::Unpin,
+    >,
+>;
+
 pub trait FramedStream:
     Stream<
         Item = std::result::Result<
@@ -88,6 +98,19 @@ impl<T> FramedStream for T where
         + 'static
 {
 }
+
+/// Helper type for incoming V2 frames when run time support for multiple sources (e.g.
+/// TcpStream, mpsc::Receiver etc.) is needed
+pub type DynFramedStream = std::pin::Pin<
+    Box<
+        dyn Stream<
+                Item = std::result::Result<
+                    <Framing as ii_wire::Framing>::Rx,
+                    <Framing as ii_wire::Framing>::Error,
+                >,
+            > + Send,
+    >,
+>;
 
 /// Protocol associates a custom handler with it
 pub struct Protocol;
@@ -192,6 +215,9 @@ pub trait Handler: 'static + Send {
     ) {
     }
 
+    async fn visit_reconnect(&mut self, _header: &framing::Header, _payload: &messages::Reconnect) {
+    }
+
     async fn visit_set_target(
         &mut self,
         _header: &framing::Header,
@@ -289,6 +315,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
         }
         MessageType::NewMiningJob => Box::new(messages::NewMiningJob::try_from(frame)?),
         MessageType::SetNewPrevHash => Box::new(messages::SetNewPrevHash::try_from(frame)?),
+        MessageType::Reconnect => Box::new(messages::Reconnect::try_from(frame)?),
         MessageType::SetTarget => Box::new(messages::SetTarget::try_from(frame)?),
         MessageType::SubmitSharesStandard => {
             Box::new(messages::SubmitSharesStandard::try_from(frame)?)

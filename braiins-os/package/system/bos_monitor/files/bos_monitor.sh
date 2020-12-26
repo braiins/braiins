@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (C) 2019  Braiins Systems s.r.o.
+# Copyright (C) 2020  Braiins Systems s.r.o.
 #
 # This file is part of Braiins Open-Source Initiative (BOSI).
 #
@@ -39,12 +39,26 @@ OPKG_CONF_PATH="/etc/opkg.conf"
 BOS_FIRMWARE_NAME="bos_firmware"
 BOS_UPGRADE_PATH="/tmp/bos_upgrade"
 
+has_new_feeds() {
+	local feed_path
+	for feed_path in "$@"; do
+		# skip all files with sig extension
+		case "$feed_path" in
+		*.sig)
+			continue
+			;;
+		esac
+		[ -f "$feed_path" -a "(" ! -f "$BOS_UPGRADE_PATH" -o "$BOS_UPGRADE_PATH" -ot "$feed_path" ")" ] \
+			&& return 0
+	done
+	# everything is up to date
+	return 1
+}
+
 case "$3" in
 opkg.lock)
 	opkg_lists=$(awk '/lists_dir/ {print $3}' /etc/opkg.conf)
-	bos_firmware_path="${opkg_lists}/${BOS_FIRMWARE_NAME}"
-	if [ -f "$bos_firmware_path" \
-		 -a "(" ! -f "$BOS_UPGRADE_PATH" -o "$BOS_UPGRADE_PATH" -ot "$bos_firmware_path" ")" ]; then
+	if has_new_feeds "${opkg_lists}/${BOS_FIRMWARE_NAME}"*; then
 		touch "$BOS_UPGRADE_PATH"
 		bos_upgradable=$(opkg list-upgradable | awk '/firmware/ {print $3 " -> " $5}')
 		echo "$bos_upgradable" > "$BOS_UPGRADE_PATH"

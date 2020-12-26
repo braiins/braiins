@@ -1,0 +1,25 @@
+[package]
+name = "bosminer-antminer"
+version = "0.1.0"
+authors = ["Braiins <braiins@braiins.com>"]
+license = "GPL-3.0-or-later"
+edition = "2018"
+
+[dependencies]
+approx = "0.3.2"
+async-trait = "0.1.13"
+bosminer = { path = "../bosminer" }
+bosminer-macros = { path = "../bosminer-macros" }
+chrono = "0.4.9"
+failure = "0.1.5"
+ii-async-compat = { path = "../../utils-rs/async-compat" }
+ii-async-i2c = { path = "../../utils-rs/async-i2c" }
+ii-bitcoin = { path = "../../coins/bitcoin" }
+ii-fpga-io-am1-s9 = { path = "../../hw/zynq-io-am1-s9/fpga-io" }
+ii-logging = { path = "../../utils-rs/logging" }
+ii-sensors = { path = "../../utils-rs/sensors" }
+once_cell = "1.2.0"
+packed_struct="0.3"
+packed_struct_codegen = "0.3"
+pid_control = "0.7.2"
+uio-async = { path = "../../utils-rs/uio-async" }

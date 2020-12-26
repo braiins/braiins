@@ -22,6 +22,8 @@
 
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 
+BMMINER_CONF_PATH="/tmp/bmminer.conf"
+
 flash_eraseall() {
 	flash_erase "$1" 0 0
 }
@@ -31,8 +33,7 @@ file_size() {
 }
 
 get_bm_config() {
-	tr -d '\n' < /config/bmminer.conf | \
-	sed -n 's/.*"'$1'" *:[ "]*\([^ ",}]*\).*/\1/p'
+	json_get "$BMMINER_CONF_PATH" "$1"
 }
 
 get_net_config() {
@@ -111,6 +112,9 @@ DST_STAGE2_MTD=8
 SRC_STAGE3_MTD=2
 DST_STAGE3_MTD=8
 
+# copy config to temp to prevent possible modifications
+cp -f "/config/bmminer.conf" "$BMMINER_CONF_PATH"
+
 # save network settings
 NET_HOSTNAME=$(get_net_config "hostname")
 NET_IP=$(get_net_config "ipaddress")
@@ -122,6 +126,25 @@ NET_DNS_SERVERS=$(get_net_config "dnsservers" | tr " " ,)
 MINER_FREQ=$(get_bm_config "bitmain-freq")
 MINER_VOLTAGE=$(get_bm_config "bitmain-voltage")
 MINER_FIXED_FREQ=$(get_bm_config "fixed-freq")
+
+# save all pools
+MINER_POOL_COUNT=$(json_array_len "$BMMINER_CONF_PATH" pools)
+
+for i in $(seq 1 $MINER_POOL_COUNT); do
+	index=$(($i - 1))
+	url=$(get_bm_config "pools.$index.url")
+	user=$(get_bm_config "pools.$index.user")
+	pass=$(get_bm_config "pools.$index.pass")
+
+	host=${url%:*}
+	port=${url##*:}
+	[ "$port" == "$url" ] && port=
+
+	eval MINER_POOL_HOST_$i='$host'
+	eval MINER_POOL_PORT_$i='$port'
+	eval MINER_POOL_USER_$i='$user'
+	eval MINER_POOL_PASS_$i='$pass'
+done
 
 if [ x"$KEEP_HOSTNAME" == x"cond" ]; then
 	# keep hostname only if it has been changed by user

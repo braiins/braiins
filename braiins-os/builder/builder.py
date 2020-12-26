@@ -165,6 +165,10 @@ class Builder:
     UPGRADE_SCRIPT_REQUIREMENTS = 'requirements.txt'
     UPGRADE_STAGE1_CONTROL_SRC = 'CONTROL'
     UPGRADE_STAGE1_CONTROL = 'CONTROL'
+    UPGRADE_JSON_AWK_SRC = 'JSON.awk'
+    UPGRADE_JSON_AWK = 'JSON.awk'
+    UPGRADE_JSON_JQ_SRC = 'jq.awk'
+    UPGRADE_JSON_JQ = 'jq.awk'
     UPGRADE_STAGE1_SCRIPT = 'stage1.sh'
     UPGRADE_STAGE2_SCRIPT = 'stage2.sh'
     UPGRADE_STAGE3_SCRIPT_TEMPLATE = 'stage3.sh.template'
@@ -325,6 +329,21 @@ class Builder:
         logging.debug("Set required firmware version to '{}'".format(fw_require))
         stream.write('{}="{}"\n'.format(config, fw_require))
 
+    def _write_firmware_feeds_record(self, stream, config):
+        """
+        Write name of feeds record for current firmware
+
+        :param stream:
+            Opened stream for writing configuration.
+        :param config:
+            Configuration name prefix.
+        :return:
+            Name of feeds record for current firmware.
+        """
+        feeds_record = self._config.build.feeds_record
+        logging.debug("Set firmware feeds record to '{}'".format(feeds_record))
+        stream.write('{}="{}"\n'.format(config, feeds_record))
+
     def _write_external_path(self, stream, config, repo_name: str, name: str):
         """
         Write absolute path to external directory of corespondent repository
@@ -369,6 +388,7 @@ class Builder:
         ('CONFIG_FIRMWARE_MAJOR', _write_firmware_major),
         ('CONFIG_FIRMWARE_VERSION', _write_firmware_version),
         ('CONFIG_FIRMWARE_REQUIRE', _write_firmware_require),
+        ('CONFIG_FIRMWARE_FEEDS_RECORD', _write_firmware_feeds_record),
         # remove all commented CONFIG_TARGET_
         ('# CONFIG_TARGET_', None)
     ]
@@ -445,6 +465,15 @@ class Builder:
                 """
                 self._format_tags[name] = value
 
+            def remove_tag(self, name):
+                """
+                Remove format tag
+
+                :param name:
+                    Name of tag.
+                """
+                del self._format_tags[name]
+
             def __call__(self, value: str) -> str:
                 """
                 Create callable object used in configuration parset for tag expansion
@@ -489,7 +518,7 @@ class Builder:
         """
         return self._config
 
-    def _run(self, *args, path=None, input=None, output=False, init=None):
+    def _run(self, *args, path=None, input=None, output=False, init=None, cwd=None):
         """
         Run system command in LEDE source directory
 
@@ -514,11 +543,13 @@ class Builder:
             If true then method returns captured stdout otherwise stdout is printed to standard output.
         :param init:
             An object to be called in the child process just before the child is executed.
+        :param cwd:
+            Path to current directory for system command. When it is None then LEDE source directory is used.
         :return:
             Captured stdout when `output` argument is set to True.
         """
         env = None
-        cwd = self._working_dir
+        cwd = cwd or self._working_dir
         stdout = subprocess.PIPE if output else None
 
         if path:
@@ -535,11 +566,11 @@ class Builder:
         if output:
             return process.stdout
 
-    def get_firmware_version(self, short=False, local_time=False) -> str:
+    def get_firmware_version(self, short=False, local_time=False, show_dirty=True, suffix=None) -> str:
         """
         Return version name for firmware
 
-        The firmware version is in a form 'firmware_<date>-<patch_level>-<lede_commit>(-dirty)'
+        The firmware version is in a form 'firmware_<date>-<patch_level>-<lede_commit>(-dirty)<suffix>'
         The patch level is incremented when several firmwares have beenRemoteWalker released in the same day.
         The current firmware version is get from git tag which is created when release is done.
 
@@ -547,6 +578,10 @@ class Builder:
             Return unique short version without commit suffix.
         :param local_time:
             Use local time for firmware version instead of committed date of head.
+        :param show_dirty:
+            Append dirty suffix when repository is dirty.
+        :param suffix:
+            Value of firmware version suffix or None for default behaviour.
         :return:
             String with firmware version without 'firmware_' prefix.
         """
@@ -567,7 +602,8 @@ class Builder:
         fw_latest = next(iter(sorted(fw_tags, reverse=True)), None)
 
         commit = repo.head.object.hexsha[:8]
-        dirty = '-dirty' if repo.is_dirty() else ''
+        dirty = '-dirty' if show_dirty and repo.is_dirty() else ''
+        suffix = self._config.build.get('version_suffix', '') if suffix is None else ''
 
         if fw_latest:
             fw_patch_level, fw_commit = fw_latest[len(fw_current):].split('-', 2)[:2]
@@ -580,7 +616,7 @@ class Builder:
             patch_level = 0
 
         prefix = '{:%Y-%m-%d}-{}'.format(commit_time, patch_level)
-        return '{}{}'.format(prefix, dirty) if short else '{}-{}{}'.format(prefix, commit, dirty)
+        return '{}{}{}'.format(prefix, dirty, suffix) if short else '{}-{}{}{}'.format(prefix, commit, dirty, suffix)
 
     def _get_repo(self, name: str) -> git.Repo:
         """
@@ -1811,6 +1847,12 @@ class Builder:
             # copy stage1 upgrade script
             upgrade = self._get_project_file(self.UPGRADE_DIR, self.UPGRADE_STAGE1_SCRIPT)
             upload_manager.put(upgrade, self.UPGRADE_STAGE1_SCRIPT)
+
+            # copy JSON utilities
+            json_awk = self._get_upgrade_file(self.UPGRADE_JSON_AWK_SRC, version)
+            upload_manager.put(json_awk, self.UPGRADE_JSON_AWK)
+            json_jq = self._get_upgrade_file(self.UPGRADE_JSON_JQ_SRC, version)
+            upload_manager.put(json_jq, self.UPGRADE_JSON_JQ)
         else:
             # firmware files are obtained from previous version
             upload_manager.put_all(os.path.join(base_system[1], self.UPGRADE_FIRMWARE_DIR))
@@ -2476,11 +2518,13 @@ class Builder:
 
         if not lines[0].startswith('## '):
             logging.error("Incorrect header in '{}' file: '{}'".format(path, lines[0].strip()))
-            raise BuilderStop
+            return False
 
         with open(path, 'w') as whatsnew:
             whatsnew.write('# {}\n\n'.format(version_short))
             whatsnew.writelines(lines)
+
+        return True
 
     def patch_config_branches(self, config_original, config):
         """
@@ -2548,65 +2592,189 @@ class Builder:
                 logging.debug("Set repository '{}/{}' to commit {}...".format(name, pattern, commit_sha))
                 config.remote.repos.get(name).match.get(pattern).branch = commit_sha
 
-    def release(self, config_original, push=True):
+    @staticmethod
+    def patch_version_suffix(config, version_suffix):
         """
-        Create release branch in git based on current configuration
+        Patch original configuration with new build version suffix
 
-        * check that all repositories are clean
-        * modify default YAML configuration so that all repositories points to the specific commit
-        * create new commit with modified configuration
-        * tag new commit with firmware version and push it upstream
+        :param config:
+            Configuration tree used for changes.
+        :param version_suffix:
+            Value of new build version suffix.
+            `None` effectively deletes the attribute.
+        :return:
+            Return `True` when config has been changed.
+        """
+        differs = config.build.get('version_suffix') != version_suffix
 
+        if differs:
+            # patch the value only if it differs from previous value
+            if version_suffix:
+                config.build.version_suffix = version_suffix
+            else:
+                del config.build.version_suffix
+
+        return differs
+
+    @staticmethod
+    def patch_feeds_record(config, feeds_record):
+        """
+        Patch original configuration with new feeds record
+
+        :param config:
+            Configuration tree used for changes.
+        :param feeds_record:
+            Value of new feeds record.
+            `None` effectively deletes the attribute.
+        :return:
+            Return `True` when config has been changed.
+        """
+        differs = feeds_record and config.build.get('feeds_record') != feeds_record
+
+        if differs:
+            # patch the value only if it differs from previous value
+            if feeds_record:
+                config.build.feeds_record = feeds_record
+            else:
+                del config.build.feeds_record
+
+        return differs
+
+    @staticmethod
+    def _has_branch(repo, branch_name, remotes=True):
+        if branch_name in repo.heads:
+            return True
+        return remotes and any((branch_name == remote.remote_head for remote in repo.remotes.origin.refs))
+
+    def _release_begin(self, repo_meta, config_original, push, force):
+        """
+        Create new release branches for monorepo and all related repositories
+
+        This is the first stage of release process where is created new branch for all repositories.
+        Development continues on master branch and newly created branch is intended only for testing.
+        Critical bug fixes are cherry-picked from master branch.
+
+        :param repo_meta:
+            Monorepo repository with current project.
         :param config_original:
             Original configuration tree before changes.
         :param push:
             Push all changes to upstream.
         """
-        repo_meta = git.Repo(search_parent_directories=True)
-
-        if repo_meta.head.is_detached:
-            logging.error("Meta repository is detached!")
-            raise BuilderStop
-
         # save active branch to return back after creating release
         meta_active_branch = repo_meta.active_branch
-        branch_name = meta_active_branch.name
 
-        if repo_meta.is_dirty(untracked_files=True):
-            logging.error("Meta repository is dirty!")
-            raise BuilderStop
+        branch_name = self._config.release.branch.stable
 
-        for name, repo in self._repos.items():
-            if repo and repo.is_dirty(untracked_files=True):
-                logging.error("Repository '{}' is dirty!".format(name))
+        if self._has_branch(repo_meta, branch_name):
+            logging.error("Branch '{}' already exists!".format(branch_name))
+            if not force:
                 raise BuilderStop
 
-        # synchronise upstream repository with local one (fetch all tags)
-        logging.debug("Fetching remote repository...")
-        repo_meta.remotes.origin.fetch()
+        for name, repo in self._repos.items():
+            if self._has_branch(repo, branch_name):
+                logging.error("Branch '{}' in repository '{}' already exists!".format(branch_name, name))
+                if not force:
+                    raise BuilderStop
 
-        commits_ahead, commits_behind = self._count_commits(repo_meta, branch_name)
-        if commits_ahead or commits_behind:
-            logging.error("Your branch and 'origin/{}' have diverged,".format(branch_name))
-            raise BuilderStop
+        logging.info("Creating new '{}' branches...".format(branch_name))
+        logging.info("- monorepo")
+        stable_branch = repo_meta.create_head(branch_name, force=force)
+        for name, repo in self._repos.items():
+            # do not create new branch for repositories checked out on specific commit
+            if not repo.head.is_detached:
+                logging.info("- {}".format(name))
+                repo.create_head(branch_name, force=force)
+
+        # copy configuration for modifications
+        config = copy.deepcopy(config_original)
+
+        stable_suffix = self._config.release.get('version_suffix.stable')
+        stable_feeds_record = self._config.release.get('feeds_record.stable')
+
+        logging.debug("Patching build version suffix...")
+        patched_version_suffix = self.patch_version_suffix(config, stable_suffix)
+        logging.debug("Patching build feeds record...")
+        patched_feeds_record = self.patch_feeds_record(config, stable_feeds_record)
+
+        if patched_version_suffix or patched_feeds_record:
+            # create commit on new release branch
+            stable_branch.checkout()
+
+            logging.info("Saving default configuration file to {}...".format(self.DEFAULT_CONFIG))
+            with open(os.path.join(self.DEFAULT_CONFIG), 'w') as default_config:
+                config.dump(default_config)
+
+            logging.debug("Creating new release commit...")
+            repo_meta.index.add([os.path.relpath(self.DEFAULT_CONFIG, repo_meta.working_tree_dir)])
+            if patched_version_suffix and patched_feeds_record:
+                repo_meta.index.commit("Set build version suffix and feeds record for stable release")
+            elif patched_version_suffix:
+                repo_meta.index.commit("Set build version suffix for stable release")
+            elif patched_feeds_record:
+                repo_meta.index.commit("Set build feeds record for stable release")
+
+            # return back to active branch
+            meta_active_branch.checkout()
+
+        if push:
+            logging.info("Pushing '{}' branches to remote...".format(branch_name))
+            logging.info("- monorepo")
+            repo_meta.remotes.origin.push(branch_name, force=force, set_upstream=True)
+            for name, repo in self._repos.items():
+                if not repo.head.is_detached:
+                    logging.info("- {}".format(name))
+                    repo.remotes.origin.push(branch_name, force=force, set_upstream=True)
+
+    def _release_freeze(self, repo_meta, config_original, push, force):
+        # save active branch to return back after creating release
+        meta_active_branch = repo_meta.active_branch
+
+        branch_name = meta_active_branch.name
+        stable_branch_name = self._config.release.branch.stable
+
+        if branch_name != stable_branch_name:
+            logging.error("Only a branch with a name '{}' can be used for freezing!".format(stable_branch_name))
+            if not force:
+                raise BuilderStop
+
+        branch_name = self._config.release.branch.release
+
+        if self._has_branch(repo_meta, branch_name):
+            logging.error("Branch '{}' already exists!".format(branch_name))
+            if not force:
+                raise BuilderStop
+
+        logging.info("Creating new '{}' branch...".format(branch_name))
+        branch = repo_meta.create_head(branch_name, force=force)
+
+        logging.debug("Checking out '{}' branch...".format(branch_name))
+        branch.checkout()
+
+        release_suffix = self._config.release.get('version_suffix.release', '')
+        release_feeds_record = self._config.release.get('feeds_record.release')
 
         # get short version for 'whatsnew.md' header
-        fw_version_short = self.get_firmware_version(short=True, local_time=True)
-        self.patch_whatsnew(self.WHATS_NEW, fw_version_short)
-
-        # create commit with patched whatsnew file
-        # repo_meta.working_tree_dir
-        repo_meta.index.add([os.path.relpath(self.WHATS_NEW, repo_meta.working_tree_dir)])
-        repo_meta.index.commit(self.WHATS_NEW_COMMENT)
-
-        logging.debug("Detaching head from branch...")
-        repo_meta.head.reference = repo_meta.head.commit
+        fw_version_short = self.get_firmware_version(short=True, local_time=True, show_dirty=False,
+                                                     suffix=release_suffix)
+        if self.patch_whatsnew(self.WHATS_NEW, fw_version_short):
+            # create commit with patched whatsnew file
+            # repo_meta.working_tree_dir
+            repo_meta.index.add([os.path.relpath(self.WHATS_NEW, repo_meta.working_tree_dir)])
+            repo_meta.index.commit(self.WHATS_NEW_COMMENT)
+        elif not force:
+            raise BuilderStop
 
         # copy configuration for modifications
         config = copy.deepcopy(config_original)
 
         # always checkout all repositories to correct commit
         config.remote.fetch_always = 'yes'
+
+        logging.debug("Patching build version suffix...")
+        self.patch_version_suffix(config, release_suffix)
+        logging.debug("Patching build feeds record...")
+        self.patch_feeds_record(config, release_feeds_record)
 
         logging.debug("Patching repository branches in config...")
         self.patch_config_branches(config_original, config)
@@ -2619,27 +2787,160 @@ class Builder:
         repo_meta.index.add([os.path.relpath(self.DEFAULT_CONFIG, repo_meta.working_tree_dir)])
         repo_meta.index.commit("Release Firmware")
 
-        fw_version_long = self.get_firmware_version()
-        fw_version = '{}_{}'.format(self.FEED_FIRMWARE, fw_version_long)
+        fw_version_long = self.get_firmware_version(show_dirty=False, suffix=release_suffix)
 
         # check if full version has the same prefix as short one
         # it can happen when release is done just before midnight
-        if not fw_version_long.startswith(fw_version_short):
+        if fw_version_long.split('-')[:4] != fw_version_short.split('-')[:4]:
             meta_active_branch.checkout()
             repo_meta.head.reset('HEAD~1')
             logging.error("Created wrong short version for '{}'".format(self.WHATS_NEW))
             logging.warning("Try to run release script again! This happens when release is done just before midnight")
             raise BuilderStop
 
-        logging.info("Creating new release tag '{}'...".format(fw_version))
-        repo_meta.create_tag(fw_version)
+        # return back to active branch
+        meta_active_branch.checkout()
+
+        # run user specific action when requested
+        self._config.formatter.add_tag('branch_name', branch_name)
+        action = self._config.release.get('action.freeze')
+        self._config.formatter.remove_tag('branch_name')
+
+        if action:
+            # run user action in monorepo directory
+            self._run(action.split(), cwd=self._monorepo_dir)
+
         if push:
-            repo_meta.remotes.origin.push(fw_version)
+            logging.info("Pushing '{}' branch to remote...".format(branch_name))
+            repo_meta.remotes.origin.push(branch_name, force=force, set_upstream=True)
+
+    def _release_end(self, repo_meta, config_original, push, force):
+        # save active branch to return back after creating release
+        meta_active_branch = repo_meta.active_branch
+        branch_name = meta_active_branch.name
+
+        devel_branch_name = self._config.release.branch.devel
+        stable_branch_name = self._config.release.branch.stable
+        release_branch_name = self._config.release.branch.release
+        whatsnew_branch_name = self._config.release.branch.whatsnew
+
+        if branch_name != devel_branch_name:
+            logging.error("Only a branch with a name '{}' can be used for ending release!".format(devel_branch_name))
+            if not force:
+                raise BuilderStop
+
+        if self._has_branch(repo_meta, whatsnew_branch_name):
+            logging.error("Branch '{}' already exists!".format(whatsnew_branch_name))
+            if not force:
+                raise BuilderStop
+
+        logging.info("Creating new '{}' branch...".format(whatsnew_branch_name))
+        whatsnew_branch = repo_meta.create_head(whatsnew_branch_name, force=force)
+
+        # switch to release branch
+        repo_meta.heads[release_branch_name].checkout()
+
+        # get release build version suffix
+        release_config = load_config(self.DEFAULT_CONFIG)
+        release_suffix = release_config.release.get('version_suffix.release', '')
+
+        fw_version_long = self.get_firmware_version(show_dirty=False, suffix=release_suffix)
+        fw_version_tag = '{}_{}'.format(self.FEED_FIRMWARE, fw_version_long)
+
+        logging.info("Creating new release tag '{}'...".format(fw_version_tag))
+        repo_meta.create_tag(fw_version_tag, force=force)
+
+        # switch to whatsnew branch where will be patched whatsnew file
+        whatsnew_branch.checkout()
+
+        # path whatsnew file with long firmware version in devel branch
+        # it differs from release branch where it cannot be done because version contains release commit
+        # but whatsnew versions for older firmwares is faxed in next release
+        if self.patch_whatsnew(self.WHATS_NEW, fw_version_long):
+            # create commit with patched whatsnew file
+            # repo_meta.working_tree_dir
+            repo_meta.index.add([os.path.relpath(self.WHATS_NEW, repo_meta.working_tree_dir)])
+            repo_meta.index.commit(self.WHATS_NEW_COMMENT)
+        elif not force:
+            raise BuilderStop
 
         # return back to active branch
         meta_active_branch.checkout()
+
         if push:
-            repo_meta.remotes.origin.push()
+            logging.info("Pushing '{}' tag to remote...".format(fw_version_tag))
+            # push teg for new firmware release
+            repo_meta.remotes.origin.push(fw_version_tag, force=force)
+            # delete all remote release branches
+            logging.info("Pushing '{}' branch...".format(whatsnew_branch_name))
+            repo_meta.remotes.origin.push(whatsnew_branch_name, force=force, set_upstream=True)
+            logging.info("Deleting remote '{}' branch...".format(stable_branch_name))
+            repo_meta.remotes.origin.push(stable_branch_name, force=force, delete=True)
+            logging.info("Deleting remote '{}' branch...".format(release_branch_name))
+            repo_meta.remotes.origin.push(release_branch_name, force=force, delete=True)
+            # delete all local release branches
+            repo_meta.delete_head(stable_branch_name, force=True)
+            repo_meta.delete_head(release_branch_name, force=True)
+            logging.info("Deleting remaining remote '{}' branches...".format(stable_branch_name))
+            for name, repo in self._repos.items():
+                if not repo.head.is_detached:
+                    logging.info("- {}".format(name))
+                    repo.remotes.origin.push(stable_branch_name, force=force, delete=True)
+                    repo.delete_head(stable_branch_name, force=True)
+
+    def release(self, stage, config_original, push=True, force=False):
+        """
+        Create release branch in git based on current configuration
+
+        * check that all repositories are clean
+        * modify default YAML configuration so that all repositories points to the specific commit
+        * create new commit with modified configuration
+        * tag new commit with firmware version and push it upstream
+
+        :param stage:
+            Release process stage.
+        :param config_original:
+            Original configuration tree before changes.
+        :param push:
+            Push all changes to upstream.
+        :param force:
+            Try to solve some errors by forcing.
+        """
+        repo_meta = git.Repo(search_parent_directories=True)
+
+        if repo_meta.head.is_detached:
+            logging.error("Meta repository is detached!")
+            raise BuilderStop
+
+        branch_name = repo_meta.active_branch.name
+
+        if repo_meta.is_dirty(untracked_files=True):
+            logging.error("Meta repository is dirty!")
+            if not force:
+                raise BuilderStop
+
+        for name, repo in self._repos.items():
+            if repo and repo.is_dirty(untracked_files=True):
+                logging.error("Repository '{}' is dirty!".format(name))
+                if not force:
+                    raise BuilderStop
+
+        # synchronise upstream repository with local one (fetch all tags)
+        logging.debug("Fetching remote repository...")
+        repo_meta.remotes.origin.fetch()
+
+        commits_ahead, commits_behind = self._count_commits(repo_meta, branch_name)
+        if commits_ahead or commits_behind:
+            logging.error("Your branch and 'origin/{}' have diverged,".format(branch_name))
+            if not force:
+                raise BuilderStop
+
+        stage_handler = {
+            'begin': self._release_begin,
+            'freeze': self._release_freeze,
+            'end': self._release_end,
+        }
+        stage_handler[stage](repo_meta, config_original, push, force)
 
     def generate_key(self, secret_path, public_path):
         """

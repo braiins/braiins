@@ -24,7 +24,7 @@ pub mod event;
 
 use std::fmt;
 use std::sync::atomic::Ordering;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use atomic_enum::atomic_enum;
 
@@ -56,17 +56,30 @@ impl fmt::Display for Status {
 #[derive(Debug)]
 pub struct StatusMonitor {
     status: AtomicStatus,
+    start_stop_sync: Mutex<()>,
     event_sender: Mutex<Option<event::Sender>>,
 }
 
 impl StatusMonitor {
     #[inline]
+    fn atomic_start_stop(&self) -> MutexGuard<()> {
+        self.start_stop_sync
+            .lock()
+            .expect("BUG: cannot lock start/stop synchronization")
+    }
+
+    #[inline]
     pub fn status(&self) -> Status {
         self.status.load(Ordering::Relaxed)
     }
 
-    pub fn initiate_starting(&self) -> bool {
+    /// `f` - closure that is 'run' to atomically perform actual start operation on an object if the
+    /// internal state allows it
+    pub fn initiate_starting(&self, f: impl FnOnce()) {
+        let _sync = self.atomic_start_stop();
+
         let mut status = self.status();
+        let mut run = false;
 
         loop {
             let previous = status;
@@ -77,7 +90,8 @@ impl StatusMonitor {
                             .compare_and_swap(status, Status::Starting, Ordering::Relaxed);
                     if status == previous {
                         // Starting has been initiated successfully
-                        return true;
+                        run = true;
+                        break;
                     }
                 }
                 Status::Failed => {
@@ -86,7 +100,8 @@ impl StatusMonitor {
                             .compare_and_swap(status, Status::Retrying, Ordering::Relaxed);
                     if status == previous {
                         // Retrying has been initiated successfully
-                        return true;
+                        run = true;
+                        break;
                     }
                 }
                 Status::Stopping => {
@@ -116,9 +131,9 @@ impl StatusMonitor {
             };
             // Try it again because another task change the state
         }
-
-        // Starting cannot be done
-        false
+        if run {
+            f();
+        }
     }
 
     pub fn initiate_running(&self) -> bool {
@@ -127,9 +142,11 @@ impl StatusMonitor {
         loop {
             let previous = status;
             match status {
-                Status::Created | Status::Stopped | Status::Failing | Status::Failed => {
-                    panic!("BUG: 'report_fail': unexpected state '{:?}'", status)
-                }
+                Status::Created
+                | Status::Running
+                | Status::Stopped
+                | Status::Failing
+                | Status::Failed => panic!("BUG: 'report_fail': unexpected state '{:?}'", status),
                 Status::Starting | Status::Retrying => {
                     status =
                         self.status
@@ -140,7 +157,6 @@ impl StatusMonitor {
                         break;
                     }
                 }
-                Status::Running => break,
                 Status::Stopping | Status::Declining | Status::Restarting | Status::Recovering => {
                     return false
                 }
@@ -152,8 +168,13 @@ impl StatusMonitor {
         true
     }
 
-    pub fn initiate_stopping(&self) -> bool {
+    /// `f` - closure that is 'run' to atomically perform actual stop operation on an object
+    /// if the internal state allows it
+    pub fn initiate_stopping(&self, f: impl FnOnce()) {
+        let _sync = self.atomic_start_stop();
+
         let mut status = self.status();
+        let mut run = false;
 
         loop {
             let previous = status;
@@ -171,7 +192,7 @@ impl StatusMonitor {
                             .compare_and_swap(status, Status::Stopping, Ordering::Relaxed);
                     if status == previous {
                         // Stopping has been initiated successfully
-                        return true;
+                        run = status != Status::Restarting;
                     }
                 }
                 Status::Retrying | Status::Recovering => {
@@ -180,15 +201,15 @@ impl StatusMonitor {
                             .compare_and_swap(status, Status::Declining, Ordering::Relaxed);
                     if status == previous {
                         // Stopping has been initiated successfully
-                        return true;
+                        run = status != Status::Recovering;
                     }
                 }
             };
             // Try it again because another task change the state
         }
-
-        // Stopping cannot be done
-        false
+        if run {
+            f();
+        }
     }
 
     pub fn initiate_failing(&self) {
@@ -241,6 +262,8 @@ impl StatusMonitor {
     }
 
     pub fn can_stop(&self) -> bool {
+        let _sync = self.atomic_start_stop();
+
         let mut status = self.status();
 
         loop {
@@ -338,6 +361,7 @@ impl Default for StatusMonitor {
     fn default() -> Self {
         Self {
             status: AtomicStatus::new(Status::Created),
+            start_stop_sync: Mutex::new(()),
             event_sender: Mutex::new(None),
         }
     }

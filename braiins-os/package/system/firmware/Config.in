@@ -10,6 +10,24 @@ config FIRMWARE_REQUIRE
     string "Previous firmware version required by this firmware"
     default ""
 
+config FIRMWARE_FEEDS_RECORD
+    string "Name of record in feeds configuration file"
+    default "bos_firmware"
+
+config FIRMWARE_FEEDS_CONFIG
+    string "Path to opkg configuration file with firmware feeds records"
+    default "bosfeeds"
+
 config FIRMWARE_FEEDS_SERVER
-    string "URL of feeds server with firmware packages"
-    default "https://feeds.braiins-os.org"
+    string "Feeds record for server URL with firmware packages"
+    default "src/gz bos_firmware https://feeds.braiins-os.org"
+
+config FIRMWARE_CUSTOM_FEEDS_CONFIG
+    string "Path to opkg custom configuration file with firmware feeds records"
+    default "custombosfeeds"
+    help
+        This configuration file is kept during sysupgrade.
+
+config FIRMWARE_CUSTOM_FEEDS_SERVER
+    string "Feeds record for server URL with custom firmware packages"
+    default "src/gz bos_firmware_nightly https://feeds-nightly.braiins-os.org"

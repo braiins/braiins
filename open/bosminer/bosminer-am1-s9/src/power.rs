@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -29,9 +29,9 @@ use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::async_i2c::AsyncI2cDev;
 use crate::error::{self, ErrorKind};
 use crate::halt;
+use ii_linux_async_i2c::AsyncI2cDev;
 
 use futures::lock::Mutex;
 use ii_async_compat::futures;
@@ -47,7 +47,7 @@ pub static OPEN_CORE_VOLTAGE: Lazy<Voltage> =
 /// Voltage controller requires periodic heart beat messages to be sent
 const VOLTAGE_CTRL_HEART_BEAT_PERIOD: Duration = Duration::from_millis(1000);
 
-const PIC_BASE_ADDRESS: u8 = 0x50;
+const PIC_BASE_I2C_ADDRESS: u8 = 0x50;
 
 const PIC_COMMAND_1: u8 = 0x55;
 const PIC_COMMAND_2: u8 = 0xAA;
@@ -165,7 +165,7 @@ impl std::cmp::PartialOrd for Voltage {
 /// S9 devices have a single I2C master that manages the voltage controllers on all hashboards.
 /// Therefore, this will be a single communication instance.
 pub struct I2cBackend {
-    inner: AsyncI2cDev,
+    inner: Mutex<AsyncI2cDev>,
 }
 
 impl I2cBackend {
@@ -176,39 +176,48 @@ impl I2cBackend {
 
     /// Calculates I2C address of the controller based on hashboard index.
     fn get_i2c_address(hashboard_idx: usize) -> u8 {
-        PIC_BASE_ADDRESS + hashboard_idx as u8 - 1
+        PIC_BASE_I2C_ADDRESS + hashboard_idx as u8 - 1
     }
 
     /// Instantiates a new I2C backend
     /// * `i2c_interface_num` - index of the I2C interface in Linux dev filesystem
     pub fn new(i2c_interface_num: usize) -> Self {
         Self {
-            inner: AsyncI2cDev::open(format!("/dev/i2c-{}", i2c_interface_num))
-                .expect("I2C instantiation failed"),
+            inner: Mutex::new(
+                AsyncI2cDev::open(format!("/dev/i2c-{}", i2c_interface_num), true)
+                    .expect("I2C instantiation failed"),
+            ),
         }
     }
 
     /// Attempt to write a byte to power controller on I2C.
     /// If write fails then retry (at most `I2C_NUM_RETRIES`).
     async fn write_retry(&self, hashboard_idx: usize, data: u8) -> error::Result<()> {
-        let mut tries_left: usize = Self::I2C_NUM_RETRIES;
+        let mut try_num = 0;
         loop {
-            let ret = self
-                .inner
+            let inner = self.inner.lock().await;
+            try_num += 1;
+            let ret = inner
                 .write(Self::get_i2c_address(hashboard_idx), vec![data])
-                .await;
-            if ret.is_ok() {
-                return ret;
-            }
-            tries_left -= 1;
-            if tries_left == 0 {
+                .await
+                .map_err(|e| e.into());
+            if ret.is_ok() || try_num >= Self::I2C_NUM_RETRIES {
                 return ret;
             }
             warn!(
                 "I2C transaction on hashboard {} failed, retrying...",
                 hashboard_idx
             );
-            delay_for(Self::I2C_RETRY_DELAY).await;
+            if try_num % 3 == 0 {
+                // Every third attempt do a I2C controller reset
+                warn!("Resetting I2C controller...");
+                inner
+                    .reset_i2c_controller()
+                    .await
+                    .expect("BUG: I2C reset failed");
+            } else {
+                delay_for(Self::I2C_RETRY_DELAY).await;
+            }
         }
     }
 
@@ -236,7 +245,9 @@ impl I2cBackend {
         for _ in 0..length {
             let byte = self
                 .inner
-                .read(Self::get_i2c_address(hashboard_idx), length)
+                .lock()
+                .await
+                .read(Self::get_i2c_address(hashboard_idx), 1)
                 .await?;
             reply.push(byte[0]);
         }

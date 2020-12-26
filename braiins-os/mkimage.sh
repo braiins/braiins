@@ -85,13 +85,6 @@ dd if=/dev/zero of=$tmpdir/part1.img bs=1M count=$image_ospart_size
 mkfs.vfat $tmpdir/part1.img -n braiins-os
 mcopy -i $tmpdir/part1.img $src/* ::/
 
-# recovery mode
-# TODO: this ought to be moved to bb script or have base per-target uEnv.txt commited in repo
-mtdparts="mtdparts=pl35x-nand:512k(boot),2560k(uboot),2m(fpga1),2m(fpga2),512k(uboot_env),512k(miner_cfg),22m(recovery),95m(firmware1),95m(firmware2)"
-recovery_mtdparts="${mtdparts},144m@0x2000000(antminer_rootfs)"
-echo "recovery_mtdparts='$recovery_mtdparts'" >> $tmpdir/uEnv.txt
-mcopy -o -i $tmpdir/part1.img $tmpdir/uEnv.txt ::/
-
 # second partition (ext)
 dd if=/dev/zero of=$tmpdir/part2.img bs=1M count=$image_upgpart_size
 mkdir $tmpdir/part2     # this will be copied onto upgrade pertition

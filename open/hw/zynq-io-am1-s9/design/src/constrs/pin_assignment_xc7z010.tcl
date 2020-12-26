@@ -69,8 +69,8 @@ set_property -dict {PACKAGE_PIN H20  IOSTANDARD LVCMOS33  PULLUP true} [get_port
 ####################################################################################################
 # Pin assignment for I2C
 ####################################################################################################
-set_property -dict { PACKAGE_PIN W18 IOSTANDARD LVCMOS33 PULLUP true } [get_ports { iic_0_scl_io }];  # S9: Jx_4, TSCL
-set_property -dict { PACKAGE_PIN W19 IOSTANDARD LVCMOS33 PULLUP true } [get_ports { iic_0_sda_io }];  # S9: Jx_3, TSDA
+set_property -dict { PACKAGE_PIN W18 IOSTANDARD LVCMOS33 PULLUP true DRIVE 16} [get_ports { IIC_HB_scl_io }];  # S9: Jx_4, TSCL
+set_property -dict { PACKAGE_PIN W19 IOSTANDARD LVCMOS33 PULLUP true DRIVE 16} [get_ports { IIC_HB_sda_io }];  # S9: Jx_3, TSDA
 
 
 ####################################################################################################

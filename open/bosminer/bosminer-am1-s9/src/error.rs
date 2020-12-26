@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -25,9 +25,10 @@
 use failure::{Backtrace, Context, Fail};
 use std::fmt::{self, Debug, Display};
 
+use ii_async_i2c as i2c;
+use ii_sensors as sensor;
 use std::io;
 use sysfs_gpio;
-use uio_async;
 
 pub struct Error {
     inner: Context<ErrorKind>,
@@ -43,14 +44,6 @@ pub enum ErrorKind {
     #[fail(display = "IO: {}", _0)]
     Io(String),
 
-    /// Error tied to a particular UIO device
-    #[fail(display = "UIO device {}: {}", _0, _1)]
-    UioDevice(String, String),
-
-    /// Generic UIO error
-    #[fail(display = "UIO: {}", _0)]
-    Uio(String),
-
     /// Unexpected version of something.
     #[fail(display = "Unexpected {} version: {}, expected: {}", _0, _1, _2)]
     UnexpectedVersion(String, String, String),
@@ -59,21 +52,9 @@ pub enum ErrorKind {
     #[fail(display = "Hashboard {}: {}", _0, _1)]
     Hashboard(usize, String),
 
-    /// Error concerning hashchip.
-    #[fail(display = "Hashchip: {}", _0)]
-    Hashchip(String),
-
     /// Error concerning hashchip enumeration.
     #[fail(display = "Enumeration: {}", _0)]
     ChipEnumeration(String),
-
-    /// Error concerning I2C on hashchip.
-    #[fail(display = "I2C hashchip: {}", _0)]
-    I2cHashchip(String),
-
-    /// Work or command FIFO timeout.
-    #[fail(display = "FIFO: {}: {}", _0, _1)]
-    Fifo(Fifo, String),
 
     /// Baud rate errors.
     #[fail(display = "Baud rate: {}", _0)]
@@ -87,13 +68,13 @@ pub enum ErrorKind {
     #[fail(display = "I2C: {}", _0)]
     I2c(String),
 
+    /// I2C errors.
+    #[fail(display = "Linux I2C: {}", _0)]
+    LinuxI2c(String),
+
     /// Power controller errors.
     #[fail(display = "Power: {}", _0)]
     Power(String),
-
-    /// PLL conversion error
-    #[fail(display = "PLL: {}", _0)]
-    PLL(String),
 
     /// Error from hashchain manager.
     #[fail(display = "HashChain Manager: {}", _0)]
@@ -106,18 +87,16 @@ pub enum ErrorKind {
     /// Error when dealing with sensors.
     #[fail(display = "Sensors: {}", _0)]
     Sensors(String),
+
+    /// Error related to bosminer-antminer crate
+    #[fail(display = "Antminer error: {}", _0)]
+    Antminer(String),
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Fail)]
 pub enum HashChainManager {
     #[fail(display = "HashChain parameters not set")]
     ParamsNotSet,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
-pub enum Fifo {
-    #[fail(display = "timed out")]
-    TimedOut,
 }
 
 /// Implement Fail trait instead of use Derive to get more control over custom type.
@@ -198,21 +177,36 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<uio_async::UioError> for Error {
-    fn from(uio_error: uio_async::UioError) -> Self {
-        let msg = uio_error.to_string();
-        Self {
-            inner: uio_error.context(ErrorKind::Uio(msg)),
-        }
-    }
-}
-
 impl From<sysfs_gpio::Error> for Error {
     fn from(gpio_error: sysfs_gpio::Error) -> Self {
         let msg = gpio_error.to_string();
         Self {
             inner: gpio_error.context(ErrorKind::Gpio(msg)),
         }
+    }
+}
+
+impl From<i2c::Error> for Error {
+    fn from(e: i2c::Error) -> Self {
+        ErrorKind::I2c(format!("{:?}", e)).into()
+    }
+}
+
+impl From<sensor::Error> for Error {
+    fn from(e: sensor::Error) -> Self {
+        ErrorKind::Sensors(format!("{:?}", e)).into()
+    }
+}
+
+impl From<ii_linux_async_i2c::Error> for Error {
+    fn from(e: ii_linux_async_i2c::Error) -> Self {
+        ErrorKind::LinuxI2c(format!("{:?}", e)).into()
+    }
+}
+
+impl From<bosminer_antminer::error::Error> for Error {
+    fn from(e: bosminer_antminer::error::Error) -> Self {
+        ErrorKind::Antminer(format!("{:?}", e)).into()
     }
 }
 

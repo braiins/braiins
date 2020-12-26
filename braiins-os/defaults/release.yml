@@ -2,6 +2,7 @@
 core:
   list:
     - bosminer
+    - bos_logger
     - bosminer_monitor
     - entropy_source
     - ca-bundle
@@ -21,10 +22,12 @@ core:
     - liblua
     - libmbedtls
     - libpcap
+    - libpopt
     - libubus-lua
     - libuci-lua
     - libuclient
     - libustream-mbedtls
+    - logrotate
     - lua
     - lua-cjson
     - luasocket

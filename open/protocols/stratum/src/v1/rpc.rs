@@ -28,10 +28,11 @@
 
 use async_trait::async_trait;
 use serde;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use serde_json;
 use serde_json::Value;
 use std::convert::TryFrom;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use super::{framing, Handler, Protocol};
@@ -39,7 +40,7 @@ use crate::error::{Error, Result, ResultExt};
 use crate::AnyPayload;
 
 /// All recognized methods of the V1 protocol have the 'mining.' prefix in json.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, PartialEq)]
 pub enum Method {
     #[serde(rename = "mining.subscribe")]
     Subscribe,
@@ -59,9 +60,36 @@ pub enum Method {
     Notify,
     #[serde(rename = "mining.set_version_mask")]
     SetVersionMask,
+    #[serde(rename = "client.reconnect")]
+    ClientReconnect,
     /// Catch all variant
-    #[serde(other)]
-    Unknown,
+    Unknown(String),
+}
+
+impl<'de> de::Deserialize<'de> for Method {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        use Method::*;
+
+        let method = String::deserialize(deserializer)?;
+        let method = match method.as_str() {
+            "mining.subscribe" => Subscribe,
+            "mining.extranonce.subscribe" => ExtranonceSubscribe,
+            "mining.authorize" => Authorize,
+            "mining.set_difficulty" => SetDifficulty,
+            "mining.set_extranonce" => SetExtranonce,
+            "mining.configure" => Configure,
+            "mining.submit" => Submit,
+            "mining.notify" => Notify,
+            "mining.set_version_mask" => SetVersionMask,
+            "client.reconnect" => ClientReconnect,
+            _ => Unknown(method),
+        };
+
+        Ok(method)
+    }
 }
 
 /// The motivation is to provide only the payload part of the message to ID
@@ -291,7 +319,7 @@ mod test {
 
         match deserialized {
             Rpc::Request(request) => assert_eq!(
-                Method::Unknown,
+                Method::Unknown("mining.none_existing".into()),
                 request.payload.method,
                 "Unknown method not detected!"
             ),

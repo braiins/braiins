@@ -70,12 +70,10 @@ cd braiins/braiins-os
 ./docker/build-docker-container.sh
 ```
 
-- Run the development build for selected targets. The example below runs a full build for all supported mining devices
-  for the current revision of the **braiins-os** release using a test signature key. The 'false' value indicates that
-  the created **Packages** list will not be merged with the current release.
+- Runs a full build for the current revision of the **braiins-os** release using a test signature key.
 
 ```
-./docker/build-release-in-docker.sh ./keys/test current false am1-s9 dm1-g9 dm1-g19
+./docker/build-in-docker.sh
 ```
 
 ### Docker interactive mode
@@ -83,7 +81,7 @@ cd braiins/braiins-os
 Call the build release script without parameters to run the docker container in an interactive mode:
 
 ```
-./docker/build-release-in-docker.sh
+./docker/build-in-docker.sh
 ```
 
 This mode is intended mainly for testing purpose. The build environment is fully initialized and allows running all

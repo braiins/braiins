@@ -1,0 +1,5 @@
+[cargo_check]
+skip = true
+
+[cargo_test]
+skip = true

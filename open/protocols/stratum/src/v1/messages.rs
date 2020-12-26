@@ -124,7 +124,7 @@ macro_rules! impl_conversion_response {
                 // to the visitor pattern. We shouldn't clone any part of the incoming message
                 // However, since the result is being passed by reference
                 serde_json::from_value(result.0.clone())
-                    .context("Failed to parse response")
+                    .context(format!("Failed to parse response ({:?})", result))
                     .map_err(Into::into)
             }
         }
@@ -270,18 +270,14 @@ impl Subscribe {
 //  let port = req.param_to_string(3, ErrorKind::Subscribe("Invalid TCP port".into()))?;
 impl_conversion_request!(Subscribe, Method::Subscribe, visit_subscribe);
 
-/// Custom subscriptions
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Subscription(pub String, pub String);
-
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
 /// see StratumError for reasons why this structure doesn't have named fields
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct SubscribeResult(pub Vec<Subscription>, pub ExtraNonce1, pub usize);
+pub struct SubscribeResult(pub Vec<serde_json::Value>, pub ExtraNonce1, pub usize);
 
 impl SubscribeResult {
-    pub fn subscriptions(&self) -> &Vec<Subscription> {
+    pub fn subscriptions(&self) -> &Vec<serde_json::Value> {
         &self.0
     }
 
@@ -508,3 +504,40 @@ impl Submit {
 }
 
 impl_conversion_request!(Submit, Method::Submit, visit_submit);
+
+/// Server initiated message requiring client to perform a reconnect, all fields are optional and
+/// we don't know which of them the server sends
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct ClientReconnect(pub Vec<serde_json::Value>);
+
+impl ClientReconnect {
+    pub fn host(&self) -> Option<&serde_json::Value> {
+        if self.0.len() > 0 {
+            Some(&self.0[0])
+        } else {
+            None
+        }
+    }
+
+    pub fn port(&self) -> Option<&serde_json::Value> {
+        if self.0.len() > 1 {
+            Some(&self.0[1])
+        } else {
+            None
+        }
+    }
+
+    pub fn wait_time(&self) -> Option<&serde_json::Value> {
+        if self.0.len() > 2 {
+            Some(&self.0[2])
+        } else {
+            None
+        }
+    }
+}
+
+impl_conversion_request!(
+    ClientReconnect,
+    Method::ClientReconnect,
+    visit_client_reconnect
+);

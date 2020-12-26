@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -35,10 +35,10 @@ pub mod support;
 
 use crate::bm1387::MidstateCount;
 use crate::fan;
+use crate::hashchain;
 use crate::hooks;
 use crate::monitor;
 use crate::power;
-use crate::FrequencySettings;
 
 use support::OptionDefault;
 
@@ -144,7 +144,7 @@ pub const JOB_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct ResolvedChainConfig {
     pub midstate_count: MidstateCount,
-    pub frequency: FrequencySettings,
+    pub frequency: hashchain::frequency::FrequencySettings,
     pub voltage: power::Voltage,
     pub enabled: bool,
 }
@@ -390,7 +390,9 @@ impl Backend {
         // Computed s9-specific values
         ResolvedChainConfig {
             midstate_count: MidstateCount::new(self.midstate_count()),
-            frequency: FrequencySettings::from_frequency((*frequency * 1_000_000.0) as usize),
+            frequency: hashchain::frequency::FrequencySettings::from_frequency(
+                (*frequency * 1_000_000.0) as usize,
+            ),
             // TODO: handle config errors
             voltage: power::Voltage::from_volts(*voltage as f32)
                 .expect("TODO: bad voltage requested"),

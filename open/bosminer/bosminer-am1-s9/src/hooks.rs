@@ -25,6 +25,7 @@ use crate::monitor;
 use crate::Manager;
 
 use bosminer::client;
+use ii_cgminer_api::command;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -60,6 +61,13 @@ pub trait Hooks: Send + Sync + Debug {
 
     /// Called after all groups with clients has been loaded
     async fn clients_loaded(&self, _client_manager: client::Manager) {}
+
+    /// Called after custom commands creation
+    async fn cgminer_custom_commands_created(
+        self: Arc<Self>,
+        _cgminer_commands: &mut command::Map,
+    ) {
+    }
 }
 
 /// NoHooks uses default implementation of all hooks

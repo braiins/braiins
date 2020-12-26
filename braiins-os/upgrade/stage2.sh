@@ -24,14 +24,17 @@
 
 set -e
 
+DEVICE_CFG="device_cfg"
+
 mtd_write() {
 	mtd -e "$2" write "$1" "$2"
 }
 
 echo "Running stage2 upgrade process..."
 
-ETHADDR=$(fw_printenv -n ethaddr 2> /dev/null)
-MINER_HWID=$(fw_printenv -n miner_hwid 2> /dev/null)
+# dump all network and miner settings
+fw_printenv 2> /dev/null \
+| grep '^\(ethaddr\)\|\(net_\)\|\(miner_\)' > "$DEVICE_CFG"
 
 # turn off error checking for auxiliary settings
 set +e
@@ -39,16 +42,6 @@ STAGE3_OFFSET=$(fw_printenv -n stage3_off 2> /dev/null)
 STAGE3_SIZE=$(fw_printenv -n stage3_size 2> /dev/null)
 STAGE3_MTD=/dev/mtd$(fw_printenv -n stage3_mtd 2> /dev/null)
 STAGE3_PATH="/tmp/stage3.tgz"
-
-NET_HOSTNAME=$(fw_printenv -n net_hostname 2> /dev/null)
-NET_IP=$(fw_printenv -n net_ip 2> /dev/null)
-NET_MASK=$(fw_printenv -n net_mask 2> /dev/null)
-NET_GATEWAY=$(fw_printenv -n net_gateway 2> /dev/null)
-NET_DNS_SERVERS=$(fw_printenv -n net_dns_servers 2> /dev/null)
-
-MINER_FREQ=$(fw_printenv -n miner_freq 2> /dev/null)
-MINER_VOLTAGE=$(fw_printenv -n miner_voltage 2> /dev/null)
-MINER_FIXED_FREQ=$(fw_printenv -n miner_fixed_freq 2> /dev/null)
 set -e
 
 mtd_write fit.itb recovery
@@ -58,24 +51,7 @@ mtd -n -p 0x1500000 write boot.bin.gz recovery
 mtd -n -p 0x1520000 write uboot.img.gz recovery
 
 mtd_write miner_cfg.bin miner_cfg
-fw_setenv -c miner_cfg.config --script - <<-EOF
-	# MAC address
-	ethaddr=${ETHADDR}
-	#
-	# network settings
-	net_hostname=${NET_HOSTNAME}
-	net_ip=${NET_IP}
-	net_mask=${NET_MASK}
-	net_gateway=${NET_GATEWAY}
-	net_dns_servers=${NET_DNS_SERVERS}
-	#
-	# miner settings
-	miner_hwid=${MINER_HWID}
-	miner_freq=${MINER_FREQ}
-	miner_voltage=${MINER_VOLTAGE}
-	miner_fixed_freq=${MINER_FIXED_FREQ}
-EOF
-
+fw_setenv -c miner_cfg.config --script "$DEVICE_CFG"
 
 if [ -n "${STAGE3_SIZE}" ]; then
 	# detected stage3 upgrade tarball

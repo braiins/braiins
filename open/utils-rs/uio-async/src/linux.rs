@@ -1,4 +1,3 @@
-use fs2::FileExt;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -136,7 +135,6 @@ impl UioDevice {
     pub fn new(uio_num: usize) -> io::Result<UioDevice> {
         let path = format!("/dev/uio{}", uio_num);
         let devfile = OpenOptions::new().read(true).write(true).open(path)?;
-        devfile.try_lock_exclusive()?;
         Ok(UioDevice { uio_num, devfile })
     }
 

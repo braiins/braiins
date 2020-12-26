@@ -211,4 +211,15 @@ impl Descriptor {
             fragment,
         })
     }
+
+    /// Detect extranonce subscribe in the URL fragment stored within this descriptor. This is
+    /// for Stratum V1 protocol support.
+    pub fn detect_xnsub(&self) -> bool {
+        self.host.find(".nicehash.com").is_some()
+            || self
+                .fragment
+                .as_ref()
+                .and_then(|fragment| fragment.find("xnsub"))
+                .is_some()
+    }
 }

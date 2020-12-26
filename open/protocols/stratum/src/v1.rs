@@ -94,6 +94,13 @@ pub trait Handler: 'static + Send {
     }
 
     async fn visit_submit(&mut self, _id: &MessageId, _payload: &messages::Submit) {}
+
+    async fn visit_client_reconnect(
+        &mut self,
+        _id: &MessageId,
+        _payload: &messages::ClientReconnect,
+    ) {
+    }
 }
 
 pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
@@ -125,6 +132,8 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
                     Box::new(messages::Notify::try_from(request)?) as Box<dyn AnyPayload<Protocol>>
                 }
                 Method::SetVersionMask => Box::new(messages::SetVersionMask::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                Method::ClientReconnect => Box::new(messages::ClientReconnect::try_from(request)?)
                     as Box<dyn AnyPayload<Protocol>>,
                 _ => {
                     return Err(ErrorKind::Rpc(format!("Unsupported request {:?}", request)).into())

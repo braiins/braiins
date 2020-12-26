@@ -167,18 +167,15 @@ impl Handler {
         for manager in self.managers.iter() {
             let inner = manager.inner.lock().await;
             if let Some(hash_chain) = inner.hash_chain.as_ref() {
-                if let Some(sensor::Temperature { local, remote }) =
-                    hash_chain.current_temperature()
-                {
-                    list.push(response::ext::Temp {
-                        idx: list.len() as i32,
-                        id: manager.hashboard_idx as i32,
-                        info: TempInfo {
-                            board: Option::from(local).unwrap_or(0.0) as f64,
-                            chip: Option::from(remote).unwrap_or(0.0) as f64,
-                        },
-                    });
-                }
+                let sensor::Temperature { local, remote } = hash_chain.current_temperature();
+                list.push(response::ext::Temp {
+                    idx: list.len() as i32,
+                    id: manager.hashboard_idx as i32,
+                    info: TempInfo {
+                        board: Option::from(local).unwrap_or(0.0) as f64,
+                        chip: Option::from(remote).unwrap_or(0.0) as f64,
+                    },
+                });
             }
         }
         Ok(response::ext::Temps { list: list })
@@ -208,7 +205,7 @@ pub fn create_custom_commands(
     backend: Arc<crate::Backend>,
     managers: Vec<Arc<crate::Manager>>,
     monitor: Arc<monitor::Monitor>,
-) -> Option<command::Map> {
+) -> command::Map {
     let handler = Arc::new(Handler::new(backend.to_string(), managers, monitor));
 
     let custom_commands = commands![
@@ -218,5 +215,5 @@ pub fn create_custom_commands(
         (FANS: ParameterLess -> handler.handle_fans)
     ];
 
-    Some(custom_commands)
+    custom_commands
 }

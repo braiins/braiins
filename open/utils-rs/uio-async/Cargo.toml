@@ -14,4 +14,3 @@ nix = "0.14.1"
 libc = "0.2"
 timeout-readwrite = "0.2.1"
 tokio-file-unix = { path = "../../utils-rs/tokio-file-unix" }
-fs2 = "0.4.3"

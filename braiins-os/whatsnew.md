@@ -1,6 +1,44 @@
+# 2020-04-30-2
+
+## Overview
+
+This is a quick bugfix release that address problem with building the firmware locally.
+
+## All mining hardware types
+
+- [bug] build script has been simplified and produces SD card images directly from inside the docker run instead of generating bash scripts
+
+
+# 2020-04-30-0-259943b5
+
+## Overview
+
+This release covers mostly user facing issues, installation/uninstallation pain points, and 1 major problem with I2C controller on S9s. Also, we now have nightly builds that are easy to enable via the **bos** tool.
+
+## All mining hardware types
+
+- [feature] support for reconnect - we have implemented support for `client.reconnect` (stratum V1) and reconnect message for V2
+- [feature] installation/uninstallation process (aka **upgrade2bos** for transitioning from factory firmware to Braiins OS and **restore2factory** for reverting back to factory firmware) has been improved:
+  - [feature] custom pool user (`--pool-user`) can be set on command line
+  - [feature] pool settings from the factory firmware are now automatically being migrated to the BOSminer configuration. Migration can be disabled by specifying (`--no-keep-pools`)
+  - [feature] time and disk space consuming backup of the original firmware is now disabled by default (can be enabled by `--backup`)
+  - [feature] keeping the host name while performing a first-time install is now driven by 2 options `--keep-hostname` and `--no-keep-hostname` allowing users to force override and automatic hostname generation based on MAC address
+- [feature] support for enabling/disabling nightly builds has been integrated into **bos** utility (and its legacy **miner** counterpart).
+- [feature] system now provides **logs** covering **longer timespan** of **BOSminer** operation due to enabling **log rotation** and compression of '/var/log/syslog.old' when it is bigger than 32 kB
+- [bug] SD card image now contains the Slush Pool authority public key that was missing
+- [bug] rejection rate is now being displayed correctly 
+- [bug] unknown stratum V1 messages received from the server are now being logged for diagnostics
+
+## Antminer S9
+
+- [bug] some devices were experiencing random I2C controller bus lockups and would fail to communicate with hashboard power controllers connected to the shared I2C bus. We have found out that the cause was the Xilinx I2C controller core that we have integrated into the FPGA bitstream. We have switched to the I2C present in the SoC and the bitstream only routes the signal of the peripheral (IIC0) to corresponding FPGA pins.
+
 # 2020-03-29-0
 
 ## Overview
+
+## All mining hardware types
+
 
 Dear **CGminer**, thank you for all the proof of works you've delivered and for the many challenges provided after your source code was forked and closed by hardware manufacturers. Special thanks to **Con Kolivas** - the original author of CGminer - for all the years of hard work on creating and maintaining this fundamental component of Bitcoin ecosystem, even as it became an impossible task. This release marks a significant step forward in **Braiins OS** development, since it replaces **CGminer** with a new software called **BOSminer** written from scratch in Rust. CGminer has been with us since the GPU days and helped Bitcoin grow to what it is today. RIP - Rust In Peace, CGminer.
 The goal of the release was to replicate the existing feature set of the **CGminer**-based **Braiins OS**, while using the new mining software.
